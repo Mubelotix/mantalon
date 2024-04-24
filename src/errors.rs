@@ -9,6 +9,7 @@ pub enum MantalonError {
     InvalidAddr { addr: String, error: <Multiaddr as FromStr>::Err },
     MissingProtocol,
     UnsupportedProtocol { protocol: String },
+    ConnectionError { error: std::io::Error },
 }
 
 impl std::fmt::Display for MantalonError {
@@ -17,6 +18,7 @@ impl std::fmt::Display for MantalonError {
             MantalonError::InvalidAddr { addr, error } => write!(f, "Invalid address {addr}: {error}"),
             MantalonError::MissingProtocol => write!(f, "Missing protocol"),
             MantalonError::UnsupportedProtocol { protocol } => write!(f, "Unsupported protocol {protocol}"),
+            MantalonError::ConnectionError { error } => write!(f, "Connection error: {error}"),
         }
     }
 }
@@ -27,6 +29,7 @@ impl ResponseError for MantalonError {
             MantalonError::InvalidAddr { .. } => StatusCode::BAD_REQUEST,
             MantalonError::MissingProtocol => StatusCode::BAD_REQUEST,
             MantalonError::UnsupportedProtocol { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            MantalonError::ConnectionError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
