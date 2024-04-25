@@ -1,9 +1,14 @@
 use std::{cell::RefCell, collections::VecDeque, io::{Error as IoError, ErrorKind as IoErrorKind}, pin::Pin, rc::Rc, task::{Context, Poll, Waker}};
+use hyper_util::rt::TokioIo;
 use js_sys::Uint8Array;
 use tokio::io::{AsyncWrite, AsyncWriteExt, AsyncRead, AsyncReadExt};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::*;
 use web_sys::*;
+use bytes::Bytes;
+use http::{Request, StatusCode};
+use http_body_util::Empty;
+use hyper::client::conn;
 
 macro_rules! log {
     ( $( $t:tt )* ) => {
@@ -95,7 +100,7 @@ impl AsyncWrite for WrappedWebSocket {
     }
 }
 
-impl AsyncRead for WrappedWebSocket {
+impl AsyncRead for WrappedWebSocket { // TODO impl hyper traits directly
     fn poll_read(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut tokio::io::ReadBuf<'_>) -> Poll<Result<(), IoError>> {
         self.read_waker = Some(cx.waker().clone()); // TODO optim
 
@@ -125,5 +130,31 @@ pub async fn test() {
     };
     log!("Websocket: {:?}", websocket);
 
-    let websocket = WrappedWebSocket::new(websocket);
+    let websocket = TokioIo::new(WrappedWebSocket::new(websocket));
+    let (mut request_sender, connection) = conn::http1::handshake(websocket).await.unwrap();
+
+    // spawn a task to poll the connection and drive the HTTP state
+    wasm_bindgen_futures::spawn_local(async move {
+        if let Err(e) = connection.await {
+            eprintln!("Error in connection: {}", e);
+        }
+    });
+
+    let request = Request::builder()
+        // We need to manually add the host header because SendRequest does not
+        .header("Host", "example.com")
+        .method("GET")
+        .body(Empty::<Bytes>::new()).unwrap();
+
+    let response = request_sender.send_request(request).await.unwrap();
+    assert!(response.status() == StatusCode::OK);
+
+    let request = Request::builder()
+        .header("Host", "example.com")
+        .method("GET")
+        .body(Empty::<Bytes>::new()).unwrap();
+
+    let response = request_sender.send_request(request).await.unwrap();
+    assert!(response.status() == StatusCode::OK);
+
 }
