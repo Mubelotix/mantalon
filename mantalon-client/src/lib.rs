@@ -125,16 +125,4 @@ pub async fn main() {
     }));
 
     log!("Hello from Rust!");
-
-    let request = Request::builder()
-        .uri("https://example.com")
-        .body(Empty::<Bytes>::new()).unwrap();
-    let response = proxied_fetch(request).await.unwrap();
-    log!("Response: {:?}", response);
-    let body = read_body(response.into_body()).await.unwrap_or_default();
-    let body = String::from_utf8(body).unwrap();
-    log!("Body: {:?}", body);
-
-    let document = window().unwrap().document().unwrap().document_element().unwrap();
-    document.set_inner_html(&body);
 }
