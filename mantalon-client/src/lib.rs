@@ -1,12 +1,13 @@
 use std::{cell::RefCell, collections::VecDeque, io::{Error as IoError, ErrorKind as IoErrorKind}, pin::Pin, rc::Rc, task::{Context, Poll, Waker}, time::Duration};
 use js_sys::{Promise, Uint8Array};
+use tokio::io::{AsyncWrite, AsyncWriteExt, AsyncRead, AsyncReadExt};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::*;
 use web_sys::*;
 use bytes::Bytes;
 use http::{Request, StatusCode};
-use http_body_util::Empty;
-use hyper::client::conn;
+use http_body_util::{BodyExt, Empty};
+use hyper::{body::{Body, Incoming}, client::conn};
 
 macro_rules! log {
     ( $( $t:tt )* ) => {
@@ -157,8 +158,47 @@ impl hyper::rt::Read for WrappedWebSocket {
     }
 }
 
+async fn read_body(mut body: Incoming) -> Option<Vec<u8>> {
+    let mut body_bytes = Vec::new();
+    while !body.is_end_stream() {
+        let chunk = body.frame().await.unwrap();
+        match chunk {
+            Ok(chunk) => match chunk.into_data() {
+                Ok(data) => body_bytes.extend_from_slice(&data),
+                Err(e) => {
+                    error!("Received non-data frame: {:?}", e);
+                    return None;
+                }
+            },
+            Err(err) => {
+                error!("Error reading chunk: {:?}", err);
+                return None;
+            }
+        }
+    }
+    Some(body_bytes)
+}
+
 #[wasm_bindgen]
 pub async fn test() {
+    std::panic::set_hook(Box::new(|panic_info| {
+        if let Some(s) = panic_info.payload().downcast_ref::<&str>() {
+            if let Some(location) = panic_info.location() {
+                error!("mantalon panicked at {}:{}, {s}", location.file(), location.line());
+            } else {
+                error!("mantalon panicked, {s}");
+            }
+        } else if let Some(s) = panic_info.payload().downcast_ref::<String>() {
+            if let Some(location) = panic_info.location() {
+                error!("mantalon panicked at {}:{}, {s}", location.file(), location.line());
+            } else {
+                error!("mantalon panicked, {s}");
+            }
+        } else {
+            error!("panic occurred");
+        }
+    }));
+
     log!("Hello from Rust!");
 
     let websocket = match WebSocket::new("ws://localhost:8080/connect/ip4/93.184.215.14/tcp/80") {
@@ -191,9 +231,12 @@ pub async fn test() {
         .body(Empty::<Bytes>::new()).unwrap();
 
     log!("Sending request: {:?}", request);
+    request_sender.ready().await.unwrap();
     let response = request_sender.send_request(request).await.unwrap();
     log!("Response: {:?}", response);
     assert!(response.status() == StatusCode::OK);
+    let body = read_body(response.into_body()).await.unwrap_or_default();
+    log!("Body: {:?}", String::from_utf8(body).unwrap());
 
     let request = Request::builder()
         .header("Host", "example.com")
@@ -201,7 +244,10 @@ pub async fn test() {
         .body(Empty::<Bytes>::new()).unwrap();
 
     log!("Sending request: {:?}", request);
+    request_sender.ready().await.unwrap();
     let response = request_sender.send_request(request).await.unwrap();
     log!("Response: {:?}", response);
     assert!(response.status() == StatusCode::OK);
+    let body = read_body(response.into_body()).await.unwrap_or_default();
+    log!("Body: {:?}", String::from_utf8(body).unwrap());
 }
