@@ -1,13 +1,15 @@
-use std::{cell::RefCell, collections::VecDeque, io::{Error as IoError, ErrorKind as IoErrorKind}, pin::Pin, rc::Rc, task::{Context, Poll, Waker}, time::Duration};
+use std::{cell::RefCell, collections::VecDeque, future::Future, io::{Error as IoError, ErrorKind as IoErrorKind}, pin::Pin, rc::Rc, sync::Arc, task::{Context, Poll, Waker}, time::Duration};
+use hyper_rustls::HttpsConnector;
+use hyper_util::client::legacy::{connect::{Connected, Connection}, Client};
 use js_sys::{Promise, Uint8Array};
-use tokio::io::{AsyncWrite, AsyncWriteExt, AsyncRead, AsyncReadExt};
+use rustls::{ClientConfig, RootCertStore};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::*;
 use web_sys::*;
 use bytes::Bytes;
 use http::{Request, StatusCode};
 use http_body_util::{BodyExt, Empty};
-use hyper::{body::{Body, Incoming}, client::conn};
+use hyper::{body::{Body, Incoming}, client::conn, rt::Executor};
 
 macro_rules! log {
     ( $( $t:tt )* ) => {
@@ -158,6 +160,14 @@ impl hyper::rt::Read for WrappedWebSocket {
     }
 }
 
+impl Connection for WrappedWebSocket {
+    fn connected(&self) -> Connected {
+        Connected::new() // TODO https://docs.rs/hyper-util/0.1.2/src/hyper_util/client/legacy/connect/http.rs.html#447
+    }
+}
+
+unsafe impl Send for WrappedWebSocket {} // It's ok to use rc and refcell in wasm
+
 async fn read_body(mut body: Incoming) -> Option<Vec<u8>> {
     let mut body_bytes = Vec::new();
     while !body.is_end_stream() {
@@ -177,6 +187,48 @@ async fn read_body(mut body: Incoming) -> Option<Vec<u8>> {
         }
     }
     Some(body_bytes)
+}
+
+#[derive(Clone)]
+struct WasmExecutor;
+
+type BoxSendFuture = Pin<Box<dyn Future<Output = ()> + Send>>;
+impl Executor<BoxSendFuture> for WasmExecutor {
+    fn execute(&self, fut: BoxSendFuture) {
+        spawn_local(fut);
+    }
+}
+
+#[derive(Clone)]
+struct ProxiedConnector;
+
+impl tower_service::Service<http::Uri> for ProxiedConnector {
+    type Response = WrappedWebSocket;
+    type Error = String;
+    type Future = Pin<Box<dyn Future<Output = Result<WrappedWebSocket, String>> + Send>>;
+
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn call(&mut self, req: http::Uri) -> Self::Future {
+        Box::pin(async move {
+            let websocket = match WebSocket::new("ws://localhost:8080/connect/ip4/93.184.215.14/tcp/80") {
+                Ok(websocket) => websocket,
+                Err(err) => {
+                    error!("Could not open websocket to mantalon proxy server: {:?}", err);
+                    return;
+                }
+            };
+            log!("Websocket: {:?}", websocket);
+        
+            let websocket = WrappedWebSocket::new(websocket);
+        
+            sleep(Duration::from_secs(1)).await;
+            
+            Ok(websocket)
+        })
+    }
 }
 
 #[wasm_bindgen]
@@ -201,53 +253,72 @@ pub async fn test() {
 
     log!("Hello from Rust!");
 
-    let websocket = match WebSocket::new("ws://localhost:8080/connect/ip4/93.184.215.14/tcp/80") {
-        Ok(websocket) => websocket,
-        Err(err) => {
-            error!("Could not open websocket to mantalon proxy server: {:?}", err);
-            return;
-        }
+
+    let root_store = RootCertStore {
+        roots: webpki_roots::TLS_SERVER_ROOTS.into(),
     };
-    log!("Websocket: {:?}", websocket);
+    let config = ClientConfig::builder()
+        .with_root_certificates(root_store)
+        .with_no_client_auth();
+    let https: HttpsConnector<ProxiedConnector> = hyper_rustls::HttpsConnectorBuilder::new()
+        .with_tls_config(config)
+        .https_or_http()
+        .enable_http1()
+        .wrap_connector(ProxiedConnector);
+    let client: Client<_, Empty<Bytes>> = Client::builder(WasmExecutor).build(https);
 
-    let websocket = WrappedWebSocket::new(websocket);
+    let fut = async move {
+        let res = client
+            .get("https://example.com".parse().unwrap())
+            .await
+            .map_err(|e| error!("Could not get: {:?}", e)).unwrap();
+        log!("Status:\n{}", res.status());
+        log!("Headers:\n{:#?}", res.headers());
 
-    sleep(Duration::from_secs(1)).await;
+        let body = res
+            .into_body()
+            .collect()
+            .await
+            .map_err(|e| error!("Could not get body: {:?}", e)).unwrap()
+            .to_bytes();
+        log!("Body:\n{}", String::from_utf8_lossy(&body));
+    };
+    fut.await;
 
-    let (mut request_sender, connection) = conn::http1::handshake(websocket).await.unwrap();
-    log!("HTTP connection established");
+    // let (mut request_sender, connection) = conn::http1::handshake(websocket).await.unwrap();
+    // log!("HTTP connection established");
 
-    // spawn a task to poll the connection and drive the HTTP state
-    wasm_bindgen_futures::spawn_local(async move {
-        if let Err(e) = connection.await {
-            error!("Error in connection: {}", e);
-        }
-    });
+    // // spawn a task to poll the connection and drive the HTTP state
+    // wasm_bindgen_futures::spawn_local(async move {
+    //     if let Err(e) = connection.await {
+    //         error!("Error in connection: {}", e);
+    //     }
+    // });
 
-    let request = Request::builder()
-        // We need to manually add the host header because SendRequest does not
-        .header("Host", "example.com")
-        .method("GET")
-        .body(Empty::<Bytes>::new()).unwrap();
+    // let request = Request::builder()
+    //     // We need to manually add the host header because SendRequest does not
+    //     .header("Host", "example.com")
+    //     .method("GET")
+    //     .body(Empty::<Bytes>::new()).unwrap();
 
-    log!("Sending request: {:?}", request);
-    request_sender.ready().await.unwrap();
-    let response = request_sender.send_request(request).await.unwrap();
-    log!("Response: {:?}", response);
-    assert!(response.status() == StatusCode::OK);
-    let body = read_body(response.into_body()).await.unwrap_or_default();
-    log!("Body: {:?}", String::from_utf8(body).unwrap());
+    // log!("Sending request: {:?}", request);
+    // request_sender.ready().await.unwrap();
+    // let response = request_sender.send_request(request).await.unwrap();
+    // log!("Response: {:?}", response);
+    // assert!(response.status() == StatusCode::OK);
+    // let body = read_body(response.into_body()).await.unwrap_or_default();
+    // log!("Body: {:?}", String::from_utf8(body).unwrap());
 
-    let request = Request::builder()
-        .header("Host", "example.com")
-        .method("GET")
-        .body(Empty::<Bytes>::new()).unwrap();
+    // let request = Request::builder()
+    //     .header("Host", "example.com")
+    //     .method("GET")
+    //     .body(Empty::<Bytes>::new()).unwrap();
 
-    log!("Sending request: {:?}", request);
-    request_sender.ready().await.unwrap();
-    let response = request_sender.send_request(request).await.unwrap();
-    log!("Response: {:?}", response);
-    assert!(response.status() == StatusCode::OK);
-    let body = read_body(response.into_body()).await.unwrap_or_default();
-    log!("Body: {:?}", String::from_utf8(body).unwrap());
+    // log!("Sending request: {:?}", request);
+    // request_sender.ready().await.unwrap();
+    // let response = request_sender.send_request(request).await.unwrap();
+    // log!("Response: {:?}", response);
+    // assert!(response.status() == StatusCode::OK);
+    // let body = read_body(response.into_body()).await.unwrap_or_default();
+    // log!("Body: {:?}", String::from_utf8(body).unwrap());
 }
