@@ -1,4 +1,4 @@
-import init, { proxiedFetch } from '/pkg/mantalon_client.js';
+import init, { proxiedFetch } from '/mantalon/pkg/mantalon_client.js';
 
 async function run() {
     await init();
@@ -8,5 +8,12 @@ async function run() {
 run();
 
 self.addEventListener("fetch", (event) => {
-    event.respondWith(fetch(event.request));
+    if (event.request.url.pathname.startsWith("/mantalon/")
+        || event.request.url.pathname.startsWith("/mantalon-connect/")
+        || event.request.url.pathname === "/mantalon-connect"
+        || event.request.url.pathname === "/sw.js") {
+        event.respondWith(fetch(event.request));
+        return;
+    }
+    event.respondWith(proxiedFetch(event.request));
 });

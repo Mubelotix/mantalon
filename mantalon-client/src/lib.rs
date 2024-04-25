@@ -66,7 +66,7 @@ pub async fn sleep(duration: Duration) {
 pub async fn proxied_fetch<B: Body + 'static>(request: http::Request<B>) -> Result<http::Response<Incoming>, ()>
     where <B as Body>::Data: Send, <B as Body>::Error: std::error::Error + Send + Sync
 {
-    let websocket = match WebSocket::new("ws://localhost:8080/connect/ip4/93.184.215.14/tcp/443") {
+    let websocket = match WebSocket::new("ws://localhost:8080/mantalon-connect/ip4/93.184.215.14/tcp/443") {
         Ok(websocket) => WrappedWebSocket::new(websocket),
         Err(err) => {
             error!("Could not open websocket to mantalon proxy server: {:?}", err);

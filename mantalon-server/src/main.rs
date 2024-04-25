@@ -1,11 +1,12 @@
 use std::net::{IpAddr, SocketAddr};
-
 use futures::io::{BufReader, BufWriter};
+use http_body_util::Either as EitherBody;
 use hyper::body::Incoming;
 use hyper::server::conn::http1::Builder as HttpBuilder;
 use hyper::upgrade::Upgraded;
-use hyper::{Method, StatusCode};
+use hyper::{Method, StatusCode, Uri};
 use hyper::{body::Bytes, service::service_fn, Request, Response};
+use hyper_staticfile::Static;
 use hyper_util::rt::TokioIo;
 use log::{debug, error, info, trace};
 use multiaddr::{Multiaddr, Protocol};
@@ -31,6 +32,8 @@ async fn main() -> Result<(), BoxedError> {
 
     info!("Listening on http://{:?}", listener.local_addr().unwrap());
 
+    let static_files = Static::new("mantalon-client");
+
     loop {
         let stream = match listener.accept().await {
             Ok((stream, addr)) => {
@@ -43,9 +46,10 @@ async fn main() -> Result<(), BoxedError> {
             }
         };
 
-        tokio::spawn(async {
+        let static_files = static_files.clone();
+        tokio::spawn(async move {
             let io = TokioIo::new(stream);
-            let conn = HttpBuilder::new().serve_connection(io, service_fn(http_handler));            
+            let conn = HttpBuilder::new().serve_connection(io, service_fn(move |r| http_handler(r, static_files.clone())));            
             let conn = conn.with_upgrades(); // Enable upgrades on the connection for the websocket upgrades to work.
             if let Err(err) = conn.await {
                 error!("HTTP connection failed {err}");
@@ -54,14 +58,34 @@ async fn main() -> Result<(), BoxedError> {
     }
 }
 
-async fn http_handler(req: Request<Incoming>) -> Result<Response<FullBody>, BoxedError> {
+async fn http_handler(mut req: Request<Incoming>, static_files: Static) -> Result<Response<EitherBody<FullBody, hyper_staticfile::Body>>, BoxedError> {
     // Check path
     let path = req.uri().path();
-    if !path.starts_with("/connect/") && path != "/connect" {
+    if path.starts_with("/mantalon/") || path == "/sw.js" || path == "/" || path == "" {
+        let mut uri = req.uri().clone().into_parts();
+        uri.path_and_query = uri.path_and_query.map(|p| match p.as_str() {
+            "" | "/" => "/index.html",
+            "/sw.js" => "/sw.js",
+            p => p.trim_start_matches("/mantalon/")
+        }.parse().unwrap());
+        *req.uri_mut() = Uri::from_parts(uri).unwrap();
+
+        debug!("Serving static file: {}", req.uri());
+        return match static_files.serve(req).await {
+            Ok(response) => Ok(response.map(EitherBody::Right)),
+            Err(e) => {
+                error!("Static file error: {e}");
+                let mut response = Response::new(FullBody::from("Internal server error"));
+                *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+                Ok(response.map(EitherBody::Left))
+            }
+        };
+    }
+    if !path.starts_with("/mantalon-connect/") && path != "/mantalon-connect" {
         debug!("Endpoint not found: {path}");
         let mut response = Response::new(FullBody::from("Endpoint not found. Try /connect"));
         *response.status_mut() = StatusCode::NOT_FOUND;
-        return Ok(response);
+        return Ok(response.map(EitherBody::Left));
     }
 
     // Check method
@@ -69,7 +93,7 @@ async fn http_handler(req: Request<Incoming>) -> Result<Response<FullBody>, Boxe
         debug!("Method not allowed: {}", req.method());
         let mut response = Response::new(FullBody::from("Method not allowed. Try GET or POST"));
         *response.status_mut() = StatusCode::METHOD_NOT_ALLOWED;
-        return Ok(response);
+        return Ok(response.map(EitherBody::Left));
     }
 
     // Check if it's a websocket upgrade request
@@ -77,7 +101,7 @@ async fn http_handler(req: Request<Incoming>) -> Result<Response<FullBody>, Boxe
         debug!("Upgrade to websocket required");
         let mut response = Response::new(FullBody::from("Upgrade to websocket required"));
         *response.status_mut() = StatusCode::UPGRADE_REQUIRED;
-        return Ok(response);
+        return Ok(response.map(EitherBody::Left));
     }
 
     // Extract the address from the path
@@ -88,7 +112,7 @@ async fn http_handler(req: Request<Incoming>) -> Result<Response<FullBody>, Boxe
             debug!("Invalid address: {e}");
             let mut response = Response::new(FullBody::from(format!("Invalid address: {e}")));
             *response.status_mut() = StatusCode::BAD_REQUEST;
-            return Ok(response);
+            return Ok(response.map(EitherBody::Left));
         }
     };
 
@@ -101,13 +125,13 @@ async fn http_handler(req: Request<Incoming>) -> Result<Response<FullBody>, Boxe
             debug!("Unsupported protocol: {p}");
             let mut response = Response::new(FullBody::from(format!("Unsupported protocol: {p}")));
             *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-            return Ok(response);
+            return Ok(response.map(EitherBody::Left));
         }
         None => {
             debug!("Incomplete address");
             let mut response = Response::new(FullBody::from("Incomplete address. Try something like /ip4/127.0.0.1/tcp/8080"));
             *response.status_mut() = StatusCode::BAD_REQUEST;
-            return Ok(response);
+            return Ok(response.map(EitherBody::Left));
         }
     };
 
@@ -121,7 +145,7 @@ async fn http_handler(req: Request<Incoming>) -> Result<Response<FullBody>, Boxe
                     error!("Could not connect to address: {e}");
                     let mut response = Response::new(FullBody::from(format!("Could not connect to address: {e}")));
                     *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-                    return Ok(response);
+                    return Ok(response.map(EitherBody::Left));
                 }
             };
             let (transport_reader, transport_write) = stream.into_split();
@@ -131,13 +155,13 @@ async fn http_handler(req: Request<Incoming>) -> Result<Response<FullBody>, Boxe
             debug!("Unsupported protocol: {p}");
             let mut response = Response::new(FullBody::from(format!("Unsupported protocol: {p}")));
             *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-            return Ok(response);
+            return Ok(response.map(EitherBody::Left));
         }
         None => {
             debug!("Incomplete address");
             let mut response = Response::new(FullBody::from("Incomplete address. Try something like /ip4/127.0.0.1/tcp/8080"));
             *response.status_mut() = StatusCode::BAD_REQUEST;
-            return Ok(response);
+            return Ok(response.map(EitherBody::Left));
         }
     };
 
@@ -146,7 +170,7 @@ async fn http_handler(req: Request<Incoming>) -> Result<Response<FullBody>, Boxe
         debug!("Unsupported protocol: {p}");
         let mut response = Response::new(FullBody::from(format!("Unsupported protocol: {p}")));
         *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-        return Ok(response);
+        return Ok(response.map(EitherBody::Left));
     }
 
     // Create handshake server
@@ -164,7 +188,7 @@ async fn http_handler(req: Request<Incoming>) -> Result<Response<FullBody>, Boxe
             error!("Could not upgrade connection: {e}");
             let mut response = Response::new(FullBody::from(format!("Could not upgrade connection: {e}")));
             *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-            return Ok(response);
+            return Ok(response.map(EitherBody::Left));
         }
     };
 
@@ -186,7 +210,7 @@ async fn http_handler(req: Request<Incoming>) -> Result<Response<FullBody>, Boxe
             _ = fut2 => debug!("Transport to websocket task finished"),
         }
     });
-    Ok(response.map(|()| FullBody::default()))
+    Ok(response.map(|()| FullBody::default()).map(EitherBody::Left))
 }
 
 type WsSender = Sender<BufReader<BufWriter<Compat<TokioIo<Upgraded>>>>>;
