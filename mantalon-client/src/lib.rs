@@ -12,6 +12,7 @@ use hyper::{body::{Body, Incoming}, client::conn};
 use crate::compat::TokioIo;
 
 mod compat;
+mod exports;
 mod websocket;
 use websocket::*;
 
@@ -62,33 +63,14 @@ pub async fn sleep(duration: Duration) {
     })).await.unwrap();
 }
 
-#[wasm_bindgen]
-pub async fn test() {
-    std::panic::set_hook(Box::new(|panic_info| {
-        if let Some(s) = panic_info.payload().downcast_ref::<&str>() {
-            if let Some(location) = panic_info.location() {
-                error!("mantalon panicked at {}:{}, {s}", location.file(), location.line());
-            } else {
-                error!("mantalon panicked, {s}");
-            }
-        } else if let Some(s) = panic_info.payload().downcast_ref::<String>() {
-            if let Some(location) = panic_info.location() {
-                error!("mantalon panicked at {}:{}, {s}", location.file(), location.line());
-            } else {
-                error!("mantalon panicked, {s}");
-            }
-        } else {
-            error!("panic occurred");
-        }
-    }));
-
-    log!("Hello from Rust!");
-
+pub async fn proxied_fetch<B: Body + 'static>(request: http::Request<B>) -> Result<http::Response<Incoming>, ()>
+    where <B as Body>::Data: Send, <B as Body>::Error: std::error::Error + Send + Sync
+{
     let websocket = match WebSocket::new("ws://localhost:8080/connect/ip4/93.184.215.14/tcp/443") {
         Ok(websocket) => WrappedWebSocket::new(websocket),
         Err(err) => {
             error!("Could not open websocket to mantalon proxy server: {:?}", err);
-            return;
+            return Err(());
         }
     };
     websocket.ready().await;
@@ -116,30 +98,43 @@ pub async fn test() {
         }
     });
 
-    let request = Request::builder()
-        // We need to manually add the host header because SendRequest does not
-        .header("Host", "example.com")
-        .method("GET")
-        .body(Empty::<Bytes>::new()).unwrap();
-
-    log!("Sending request: {:?}", request);
     request_sender.ready().await.unwrap();
     let response = request_sender.send_request(request).await.unwrap();
+    
+    Ok(response)
+}
+
+#[wasm_bindgen(start)]
+pub async fn main() {
+    std::panic::set_hook(Box::new(|panic_info| {
+        if let Some(s) = panic_info.payload().downcast_ref::<&str>() {
+            if let Some(location) = panic_info.location() {
+                error!("mantalon panicked at {}:{}, {s}", location.file(), location.line());
+            } else {
+                error!("mantalon panicked, {s}");
+            }
+        } else if let Some(s) = panic_info.payload().downcast_ref::<String>() {
+            if let Some(location) = panic_info.location() {
+                error!("mantalon panicked at {}:{}, {s}", location.file(), location.line());
+            } else {
+                error!("mantalon panicked, {s}");
+            }
+        } else {
+            error!("panic occurred");
+        }
+    }));
+
+    log!("Hello from Rust!");
+
+    let request = Request::builder()
+        .uri("https://example.com")
+        .body(Empty::<Bytes>::new()).unwrap();
+    let response = proxied_fetch(request).await.unwrap();
     log!("Response: {:?}", response);
-    assert!(response.status() == StatusCode::OK);
     let body = read_body(response.into_body()).await.unwrap_or_default();
-    log!("Body: {:?}", String::from_utf8(body).unwrap());
+    let body = String::from_utf8(body).unwrap();
+    log!("Body: {:?}", body);
 
-    // let request = Request::builder()
-    //     .header("Host", "example.com")
-    //     .method("GET")
-    //     .body(Empty::<Bytes>::new()).unwrap();
-
-    // log!("Sending request: {:?}", request);
-    // request_sender.ready().await.unwrap();
-    // let response = request_sender.send_request(request).await.unwrap();
-    // log!("Response: {:?}", response);
-    // assert!(response.status() == StatusCode::OK);
-    // let body = read_body(response.into_body()).await.unwrap_or_default();
-    // log!("Body: {:?}", String::from_utf8(body).unwrap());
+    let document = window().unwrap().document().unwrap().document_element().unwrap();
+    document.set_inner_html(&body);
 }

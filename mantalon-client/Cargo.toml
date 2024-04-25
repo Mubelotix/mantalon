@@ -34,4 +34,6 @@ features = [
     "MessageEvent",
     "Blob",
     "FileReader",
+    "Document",
+    "Element",
 ]
