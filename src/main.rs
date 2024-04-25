@@ -1,18 +1,22 @@
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 
 use futures::io::{BufReader, BufWriter};
 use hyper::body::Incoming;
 use hyper::server::conn::http1::Builder as HttpBuilder;
+use hyper::upgrade::Upgraded;
+use hyper::{Method, StatusCode};
 use hyper::{body::Bytes, service::service_fn, Request, Response};
 use hyper_util::rt::TokioIo;
-use log::{error, info};
-use soketto::Data;
+use log::{debug, error, info};
+use multiaddr::{Multiaddr, Protocol};
+use soketto::{Data, Receiver, Sender};
 use soketto::{
     handshake::http::{is_upgrade_request, Server},
     BoxedError,
 };
-use tokio::net::TcpListener;
-use tokio_util::compat::TokioAsyncReadCompatExt;
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::net::{TcpListener, TcpStream};
+use tokio_util::compat::{Compat, TokioAsyncReadCompatExt};
 use soketto::connection::Error as SockettoError;
 
 type FullBody = http_body_util::Full<Bytes>;
@@ -41,7 +45,7 @@ async fn main() -> Result<(), BoxedError> {
 
         tokio::spawn(async {
             let io = TokioIo::new(stream);
-            let conn = HttpBuilder::new().serve_connection(io, service_fn(handler));            
+            let conn = HttpBuilder::new().serve_connection(io, service_fn(http_handler));            
             let conn = conn.with_upgrades(); // Enable upgrades on the connection for the websocket upgrades to work.
             if let Err(err) = conn.await {
                 error!("HTTP connection failed {err}");
@@ -51,42 +55,139 @@ async fn main() -> Result<(), BoxedError> {
 }
 
 /// Handle incoming HTTP Requests.
-async fn handler(req: Request<Incoming>) -> Result<Response<FullBody>, BoxedError> {
-    if !is_upgrade_request(&req) {
-        return Ok(Response::new(FullBody::from("Hello HTTP!")));
+async fn http_handler(req: Request<Incoming>) -> Result<Response<FullBody>, BoxedError> {
+    println!("Request: {:?}", req.uri().path());
+    println!("Headers: {:?}", req.headers());
+    println!("Method: {:?}", req.method());
+
+    // Check path
+    let path = req.uri().path();
+    if !path.starts_with("/connect/") && path != "/connect" {
+        let mut response = Response::new(FullBody::from("Endpoint not found. Try /connect"));
+        *response.status_mut() = StatusCode::NOT_FOUND;
+        return Ok(response);
     }
 
-    let mut server = Server::new();
+    // Check method
+    if req.method() != Method::POST {
+        let mut response = Response::new(FullBody::from("Method not allowed. Try POST"));
+        *response.status_mut() = StatusCode::METHOD_NOT_ALLOWED;
+        return Ok(response);
+    }
 
-    // Add any extensions that we want to use.
+    // Check if it's a websocket upgrade request
+    if !is_upgrade_request(&req) {
+        let mut response = Response::new(FullBody::from("Upgrade to websocket required"));
+        *response.status_mut() = StatusCode::UPGRADE_REQUIRED;
+        return Ok(response);
+    }
+
+    // Extract the address from the path
+    let addr = &path[8..];
+    let addr: Multiaddr = match addr.parse() {
+        Ok(addr) => addr,
+        Err(e) => {
+            let mut response = Response::new(FullBody::from(format!("Invalid address: {e}")));
+            *response.status_mut() = StatusCode::BAD_REQUEST;
+            return Ok(response);
+        }
+    };
+
+    // Extract the IP address from the multiaddr
+    let mut protocols = addr.iter();
+    let ip = match protocols.next() {
+        Some(Protocol::Ip4(ip)) => IpAddr::V4(ip),
+        Some(Protocol::Ip6(ip)) => IpAddr::V6(ip),
+        Some(p) => {
+            let mut response = Response::new(FullBody::from(format!("Unsupported protocol: {p}")));
+            *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+            return Ok(response);
+        }
+        None => {
+            let mut response = Response::new(FullBody::from("Incomplete address. Try something like /ip4/127.0.0.1/tcp/8080"));
+            *response.status_mut() = StatusCode::BAD_REQUEST;
+            return Ok(response);
+        }
+    };
+
+    // Build the underlying transport
+    let (transport_reader, transport_write): (Box<dyn AsyncRead + Send + Unpin>, Box<dyn AsyncWrite + Send + Unpin>) = match protocols.next() {
+        Some(Protocol::Tcp(port)) => {
+            let addr = SocketAddr::new(ip, port);
+            let stream = match TcpStream::connect(addr).await {
+                Ok(stream) => stream,
+                Err(e) => {
+                    error!("Could not connect to address: {e}");
+                    let mut response = Response::new(FullBody::from(format!("Could not connect to address: {e}")));
+                    *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+                    return Ok(response);
+                }
+            };
+            let (transport_reader, transport_write) = stream.into_split();
+            (Box::new(transport_reader), Box::new(transport_write))
+        }
+        Some(p) => {
+            let mut response = Response::new(FullBody::from(format!("Unsupported protocol: {p}")));
+            *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+            return Ok(response);
+        }
+        None => {
+            let mut response = Response::new(FullBody::from("Incomplete address. Try something like /ip4/127.0.0.1/tcp/8080"));
+            *response.status_mut() = StatusCode::BAD_REQUEST;
+            return Ok(response);
+        }
+    };
+
+    // Ensure there are no more protocols
+    if let Some(p) = protocols.next() {
+        let mut response = Response::new(FullBody::from(format!("Unsupported protocol: {p}")));
+        *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+        return Ok(response);
+    }
+
+    // Create handshake server
+    let mut server = Server::new();
     #[cfg(feature = "deflate")]
     {
         let deflate = soketto::extension::deflate::Deflate::new(soketto::Mode::Server);
         server.add_extension(Box::new(deflate));
     }
 
-    // Attempt the handshake.
-    match server.receive_request(&req) {
-        // The handshake has been successful so far; return the response we're given back
-        // and spawn a task to handle the long-running WebSocket server:
-        Ok(response) => {
-            tokio::spawn(async move {
-                if let Err(e) = websocket_echo_messages(server, req).await {
-                    error!("Error upgrading to websocket connection: {e}");
-                }
-            });
-            Ok(response.map(|()| FullBody::default()))
-        }
-        // We tried to upgrade and failed early on; tell the client about the failure however we like:
+    // Attempt the upgrade.
+    let response = match server.receive_request(&req) {
+        Ok(response) => response,
         Err(e) => {
+            // We tried to upgrade and failed early on; tell the client about the failure however we like:
             error!("Could not upgrade connection: {e}");
-            Ok(Response::new(FullBody::from("Something went wrong upgrading!")))
+            let mut response = Response::new(FullBody::from(format!("Could not upgrade connection: {e}")));
+            *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+            return Ok(response);
         }
-    }
+    };
+
+    // Return the response we're given back and spawn a task to handle the long-running WebSocket server
+    tokio::spawn(async move {
+        let (sender, receiver) = match handshake(server, req).await {
+            Ok((sender, receiver)) => (sender, receiver),
+            Err(e) => {
+                error!("Could not complete handshake: {e}");
+                return;
+            }
+        };
+        let fut1 = relay_websocket_to_transport(receiver, transport_write);
+        let fut2 = relay_transport_to_websocket(transport_reader, sender);
+        tokio::select! {
+            _ = fut1 => debug!("Websocket to transport task finished"),
+            _ = fut2 => debug!("Transport to websocket task finished"),
+        }
+    });
+    Ok(response.map(|()| FullBody::default()))
 }
 
-/// Echo any messages we get from the client back to them
-async fn websocket_echo_messages(server: Server, req: Request<Incoming>) -> Result<(), BoxedError> {
+type WsSender = Sender<BufReader<BufWriter<Compat<TokioIo<Upgraded>>>>>;
+type WsReceiver = Receiver<BufReader<BufWriter<Compat<TokioIo<Upgraded>>>>>;
+
+async fn handshake(server: Server, req: Request<Incoming>) -> Result<(WsSender, WsReceiver), BoxedError> {
     // The negotiation to upgrade to a WebSocket connection has been successful so far. Next, we get back the underlying
     // stream using `hyper::upgrade::on`, and hand this to a Soketto server to use to handle the WebSocket communication
     // on this socket.
@@ -98,26 +199,23 @@ async fn websocket_echo_messages(server: Server, req: Request<Incoming>) -> Resu
     let stream = BufReader::new(BufWriter::new(io.compat()));
 
     // Get back a reader and writer that we can use to send and receive websocket messages.
-    let (mut sender, mut receiver) = server.into_builder(stream).finish();
+    Ok(server.into_builder(stream).finish())
+}
 
-    // Echo any received messages back to the client:
+async fn relay_websocket_to_transport(mut receiver: WsReceiver, mut writer: Box<dyn AsyncWrite + Send + Unpin>) {
     let mut message = Vec::new();
     loop {
         message.clear();
         match receiver.receive_data(&mut message).await {
             Ok(Data::Binary(n)) => {
                 assert_eq!(n, message.len());
-                sender.send_binary_mut(&mut message).await?;
-                sender.flush().await?
+                writer.write_all(&message).await.unwrap();
+                writer.flush().await.unwrap();
             }
             Ok(Data::Text(n)) => {
                 assert_eq!(n, message.len());
-                if let Ok(txt) = std::str::from_utf8(&message) {
-                    sender.send_text(txt).await?;
-                    sender.flush().await?
-                } else {
-                    break;
-                }
+                writer.write_all(&message).await.unwrap();
+                writer.flush().await.unwrap();
             }
             Err(SockettoError::Closed) => break,
             Err(e) => {
@@ -126,6 +224,21 @@ async fn websocket_echo_messages(server: Server, req: Request<Incoming>) -> Resu
             }
         }
     }
+}
 
-    Ok(())
+async fn relay_transport_to_websocket(mut reader: Box<dyn AsyncRead + Send + Unpin>, mut sender: WsSender) {
+    let mut buffer = [0; 1024];
+    loop {
+        let n = match reader.read(&mut buffer).await {
+            Ok(n) => n,
+            Err(e) => {
+                error!("Transport read error: {e}");
+                break;
+            }
+        };
+        if n == 0 {
+            break;
+        }
+        sender.send_binary(&buffer[..n]).await.unwrap();
+    }
 }
