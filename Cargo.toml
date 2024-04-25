@@ -4,7 +4,3 @@ members = [
     "mantalon-client",
     "mantalon-server",
 ]
-
-[patch.crates-io]
-tokio-rustls = { path = "tokio-rustls" }
-webpki-roots = { path = "webpki-roots/webpki-roots" }
