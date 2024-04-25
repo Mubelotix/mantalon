@@ -85,18 +85,13 @@ pub async fn test() {
     log!("Hello from Rust!");
 
     let websocket = match WebSocket::new("ws://localhost:8080/connect/ip4/93.184.215.14/tcp/443") {
-        Ok(websocket) => websocket,
+        Ok(websocket) => WrappedWebSocket::new(websocket),
         Err(err) => {
             error!("Could not open websocket to mantalon proxy server: {:?}", err);
             return;
         }
     };
-    log!("Websocket: {:?}", websocket);
-
-    let websocket = WrappedWebSocket::new(websocket);
-
-
-    sleep(Duration::from_secs(1)).await;
+    websocket.ready().await;
 
     let mut root_cert_store = RootCertStore::empty();
     root_cert_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());

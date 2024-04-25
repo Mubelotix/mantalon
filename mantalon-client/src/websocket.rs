@@ -1,10 +1,8 @@
-use std::{cell::RefCell, collections::VecDeque, io::{Error as IoError, ErrorKind as IoErrorKind}, pin::Pin, rc::Rc, task::{Context, Poll, Waker}};
+use std::{cell::RefCell, collections::VecDeque, future::Future, io::{Error as IoError, ErrorKind as IoErrorKind}, pin::Pin, rc::Rc, task::{Context, Poll, Waker}};
 use tokio::io::{AsyncWrite, AsyncRead};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::*;
 use web_sys::*;
-use http_body_util::BodyExt;
-use hyper::body::{Body, Incoming};
 use crate::*;
 
 async fn blob_into_bytes(blob: Blob) -> Vec<u8> {
@@ -32,7 +30,11 @@ async fn blob_into_bytes(blob: Blob) -> Vec<u8> {
 pub struct WrappedWebSocket {
     buffer: Rc<RefCell<VecDeque<u8>>>,
     read_waker: Rc<RefCell<Option<Waker>>>,
-    on_message: Closure<dyn FnMut(MessageEvent)>,
+    open_waker: Rc<RefCell<Option<Waker>>>,
+    _on_open: Closure<dyn FnMut(Event)>,
+    _on_close: Closure<dyn FnMut(Event)>,
+    _on_error: Closure<dyn FnMut(Event)>,
+    _on_message: Closure<dyn FnMut(MessageEvent)>,
     ws: WebSocket
 }
 
@@ -40,6 +42,28 @@ impl WrappedWebSocket {
     pub fn new(ws: WebSocket) -> Self {
         let buffer = Rc::new(RefCell::new(VecDeque::new()));
         let read_waker: Rc<RefCell<Option<Waker>>> = Rc::new(RefCell::new(None));
+        let open_waker: Rc<RefCell<Option<Waker>>> = Rc::new(RefCell::new(None));
+
+        // Create open listener
+        let open_waker2 = Rc::clone(&open_waker);
+        let on_open = Closure::wrap(Box::new(move |_| {
+            if let Some(waker) = open_waker2.borrow_mut().as_ref() {
+                waker.wake_by_ref();
+            }
+        }) as Box<dyn FnMut(Event)>);
+        ws.set_onopen(Some(on_open.as_ref().unchecked_ref()));
+
+        // Create close listener
+        let on_close = Closure::wrap(Box::new(move |_| {
+            error!("Websocket closed");
+        }) as Box<dyn FnMut(Event)>);
+        ws.set_onclose(Some(on_close.as_ref().unchecked_ref()));
+
+        // Create error listener
+        let on_error = Closure::wrap(Box::new(move |_| {
+            error!("Websocket error");
+        }) as Box<dyn FnMut(Event)>);
+        ws.set_onerror(Some(on_error.as_ref().unchecked_ref()));
 
         // Create message receiver
         let buffer2 = Rc::clone(&buffer);
@@ -64,9 +88,34 @@ impl WrappedWebSocket {
         WrappedWebSocket {
             buffer,
             read_waker,
-            on_message,
+            open_waker,
+            _on_open: on_open,
+            _on_close: on_close,
+            _on_error: on_error,
+            _on_message: on_message,
             ws
         }
+    }
+}
+
+pub struct WebsocketReadyFut<'a>(&'a WrappedWebSocket);
+
+impl<'a> Future for WebsocketReadyFut<'a> {
+    type Output = ();
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+        if self.0.ws.ready_state() != WebSocket::CONNECTING {
+            Poll::Ready(())
+        } else {
+            *self.0.open_waker.borrow_mut() = Some(cx.waker().clone());
+            Poll::Pending
+        }
+    }
+}
+
+impl WrappedWebSocket {
+    pub fn ready(&self) -> WebsocketReadyFut {
+        WebsocketReadyFut(self)
     }
 }
 
