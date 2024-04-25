@@ -17,6 +17,9 @@ http2 = "0.1.0"
 bytes = "1.6.0"
 http = "1.1.0"
 http-body-util = "0.1.1"
+tokio-rustls = {path="../tokio-rustls", default-features=false, features=["ring", "web"]}
+webpki-roots = "0.26.1"
+pin-project-lite = "0.2.14"
 
 [dependencies.web-sys]
 version = "0.3"

@@ -1,6 +1,7 @@
-use std::{cell::RefCell, collections::VecDeque, io::{Error as IoError, ErrorKind as IoErrorKind}, pin::Pin, rc::Rc, task::{Context, Poll, Waker}, time::Duration};
+use std::{cell::RefCell, collections::VecDeque, io::{Error as IoError, ErrorKind as IoErrorKind}, pin::Pin, rc::Rc, sync::Arc, task::{Context, Poll, Waker}, time::Duration};
 use js_sys::{Promise, Uint8Array};
 use tokio::io::{AsyncWrite, AsyncWriteExt, AsyncRead, AsyncReadExt};
+use tokio_rustls::{rustls::{pki_types::ServerName, ClientConfig, RootCertStore}, TlsConnector};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::*;
 use web_sys::*;
@@ -8,6 +9,10 @@ use bytes::Bytes;
 use http::{Request, StatusCode};
 use http_body_util::{BodyExt, Empty};
 use hyper::{body::{Body, Incoming}, client::conn};
+
+use crate::compat::TokioIo;
+
+mod compat;
 
 macro_rules! log {
     ( $( $t:tt )* ) => {
@@ -122,6 +127,32 @@ impl hyper::rt::Write for WrappedWebSocket {
     }
 }
 
+impl AsyncWrite for WrappedWebSocket {
+    fn poll_write(self: Pin<&mut Self>, _cx: &mut Context<'_>, buf: &[u8]) -> Poll<Result<usize, IoError>> {
+        match self.ws.send_with_u8_array(buf) {
+            Ok(_) => Poll::Ready(Ok(buf.len())),
+            Err(err) => {
+                error!("Error sending data over websocket: {:?}", err);
+                Poll::Ready(Err(IoError::new(IoErrorKind::Other, "Error sending data over websocket")))
+            }
+        }
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), IoError>> {
+        Poll::Ready(Ok(()))   
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), IoError>> {
+        match self.ws.close() {
+            Ok(_) => Poll::Ready(Ok(())),
+            Err(err) => {
+                error!("Error closing websocket: {:?}", err);
+                Poll::Ready(Err(IoError::new(IoErrorKind::Other, "Error closing websocket")))
+            }
+        }
+    }
+}
+
 impl hyper::rt::Read for WrappedWebSocket {
     fn poll_read(
         self: Pin<&mut Self>,
@@ -153,6 +184,30 @@ impl hyper::rt::Read for WrappedWebSocket {
 
         unsafe {
             buf.advance(n);
+        }
+        Poll::Ready(Ok(()))
+    }
+}
+
+impl AsyncRead for WrappedWebSocket {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        *self.read_waker.borrow_mut() = Some(cx.waker().clone()); // TODO optim
+        let mut n = 0;
+        let mut buffer = self.buffer.borrow_mut();
+        while buf.remaining() > 0 {
+            if let Some(byte) = buffer.pop_front() { // OPTIM
+                buf.put_slice(&[byte]);
+                n += 1;
+            } else {
+                break;
+            }
+        }
+        if n == 0 {
+            return Poll::Pending;
         }
         Poll::Ready(Ok(()))
     }
@@ -201,7 +256,7 @@ pub async fn test() {
 
     log!("Hello from Rust!");
 
-    let websocket = match WebSocket::new("ws://localhost:8080/connect/ip4/93.184.215.14/tcp/80") {
+    let websocket = match WebSocket::new("ws://localhost:8080/connect/ip4/93.184.215.14/tcp/443") {
         Ok(websocket) => websocket,
         Err(err) => {
             error!("Could not open websocket to mantalon proxy server: {:?}", err);
@@ -212,9 +267,23 @@ pub async fn test() {
 
     let websocket = WrappedWebSocket::new(websocket);
 
+
     sleep(Duration::from_secs(1)).await;
 
-    let (mut request_sender, connection) = conn::http1::handshake(websocket).await.unwrap();
+    let mut root_cert_store = RootCertStore::empty();
+    root_cert_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+    let config = ClientConfig::builder()
+        .with_root_certificates(root_cert_store)
+        .with_no_client_auth();
+    let connector = TlsConnector::from(Arc::new(config));
+    let dnsname = ServerName::try_from("example.com").unwrap();
+    let stream = connector.connect(dnsname, websocket).await.unwrap();
+    log!("TLS connection established");
+
+    sleep(Duration::from_secs(1)).await;
+
+    let stream = TokioIo::new(stream);
+    let (mut request_sender, connection) = conn::http1::handshake(stream).await.unwrap();
     log!("HTTP connection established");
 
     // spawn a task to poll the connection and drive the HTTP state
@@ -238,16 +307,16 @@ pub async fn test() {
     let body = read_body(response.into_body()).await.unwrap_or_default();
     log!("Body: {:?}", String::from_utf8(body).unwrap());
 
-    let request = Request::builder()
-        .header("Host", "example.com")
-        .method("GET")
-        .body(Empty::<Bytes>::new()).unwrap();
+    // let request = Request::builder()
+    //     .header("Host", "example.com")
+    //     .method("GET")
+    //     .body(Empty::<Bytes>::new()).unwrap();
 
-    log!("Sending request: {:?}", request);
-    request_sender.ready().await.unwrap();
-    let response = request_sender.send_request(request).await.unwrap();
-    log!("Response: {:?}", response);
-    assert!(response.status() == StatusCode::OK);
-    let body = read_body(response.into_body()).await.unwrap_or_default();
-    log!("Body: {:?}", String::from_utf8(body).unwrap());
+    // log!("Sending request: {:?}", request);
+    // request_sender.ready().await.unwrap();
+    // let response = request_sender.send_request(request).await.unwrap();
+    // log!("Response: {:?}", response);
+    // assert!(response.status() == StatusCode::OK);
+    // let body = read_body(response.into_body()).await.unwrap_or_default();
+    // log!("Body: {:?}", String::from_utf8(body).unwrap());
 }
