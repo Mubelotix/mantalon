@@ -101,32 +101,6 @@ impl WrappedWebSocket {
     }
 }
 
-impl hyper::rt::Write for WrappedWebSocket {
-    fn poll_write(self: Pin<&mut Self>, _cx: &mut Context<'_>, buf: &[u8]) -> Poll<Result<usize, IoError>> {
-        match self.ws.send_with_u8_array(buf) {
-            Ok(_) => Poll::Ready(Ok(buf.len())),
-            Err(err) => {
-                error!("Error sending data over websocket: {:?}", err);
-                Poll::Ready(Err(IoError::new(IoErrorKind::Other, "Error sending data over websocket")))
-            }
-        }
-    }
-
-    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), IoError>> {
-        Poll::Ready(Ok(()))   
-    }
-
-    fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), IoError>> {
-        match self.ws.close() {
-            Ok(_) => Poll::Ready(Ok(())),
-            Err(err) => {
-                error!("Error closing websocket: {:?}", err);
-                Poll::Ready(Err(IoError::new(IoErrorKind::Other, "Error closing websocket")))
-            }
-        }
-    }
-}
-
 impl AsyncWrite for WrappedWebSocket {
     fn poll_write(self: Pin<&mut Self>, _cx: &mut Context<'_>, buf: &[u8]) -> Poll<Result<usize, IoError>> {
         match self.ws.send_with_u8_array(buf) {
@@ -150,42 +124,6 @@ impl AsyncWrite for WrappedWebSocket {
                 Poll::Ready(Err(IoError::new(IoErrorKind::Other, "Error closing websocket")))
             }
         }
-    }
-}
-
-impl hyper::rt::Read for WrappedWebSocket {
-    fn poll_read(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        mut buf: hyper::rt::ReadBufCursor<'_>,
-    ) -> Poll<Result<(), std::io::Error>> {
-        *self.read_waker.borrow_mut() = Some(cx.waker().clone()); // TODO optim
-
-        let mut n = 0;
-        unsafe {
-            let mut buf = tokio::io::ReadBuf::uninit(buf.as_mut());
-            let mut buffer = self.buffer.borrow_mut();
-            if buf.remaining() == 0 {
-                return Poll::Ready(Ok(()));
-            }
-            while buf.remaining() > 0 {
-                if let Some(byte) = buffer.pop_front() { // OPTIM
-                    buf.put_slice(&[byte]);
-                    n += 1;
-                } else {
-                    break;
-                }
-            }
-        }
-
-        if n == 0 {
-            return Poll::Pending;
-        }
-
-        unsafe {
-            buf.advance(n);
-        }
-        Poll::Ready(Ok(()))
     }
 }
 
