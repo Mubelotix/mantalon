@@ -36,4 +36,7 @@ features = [
     "FileReader",
     "Document",
     "Element",
+    "Response",
+    "ResponseInit",
+    "Headers",
 ]

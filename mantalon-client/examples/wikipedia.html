@@ -11,6 +11,7 @@
 
         async function run() {
             await init();
+            window.proxiedFetch = proxiedFetch;
             console.log("Initialized");
         }
         run();
