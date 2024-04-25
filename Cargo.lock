@@ -630,7 +630,6 @@ dependencies = [
  "http1",
  "http2",
  "hyper",
- "hyper-util",
  "js-sys",
  "tokio",
  "wasm-bindgen",

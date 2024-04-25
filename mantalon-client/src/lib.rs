@@ -1,7 +1,5 @@
-use std::{cell::RefCell, collections::VecDeque, io::{Error as IoError, ErrorKind as IoErrorKind}, pin::Pin, rc::Rc, task::{Context, Poll, Waker}};
-use hyper_util::rt::TokioIo;
-use js_sys::Uint8Array;
-use tokio::io::{AsyncWrite, AsyncWriteExt, AsyncRead, AsyncReadExt};
+use std::{cell::RefCell, collections::VecDeque, io::{Error as IoError, ErrorKind as IoErrorKind}, pin::Pin, rc::Rc, task::{Context, Poll, Waker}, time::Duration};
+use js_sys::{Promise, Uint8Array};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::*;
 use web_sys::*;
@@ -22,31 +20,43 @@ macro_rules! error {
     }
 }
 
-// async fn blob_into_bytes(blob: Blob) -> Vec<u8> {
-//     let array_buffer_promise: JsFuture = blob
-//         .array_buffer()
-//         .into();
-//
-//     let array_buffer: JsValue = array_buffer_promise
-//         .await
-//         .expect("Could not get ArrayBuffer from file");
-//
-//     js_sys::Uint8Array
-//         ::new(&array_buffer)
-//         .to_vec()
+async fn blob_into_bytes(blob: Blob) -> Vec<u8> {
+    let array_buffer_promise: JsFuture = blob
+        .array_buffer()
+        .into();
+
+    let array_buffer: JsValue = array_buffer_promise
+        .await
+        .expect("Could not get ArrayBuffer from file");
+
+    js_sys::Uint8Array
+        ::new(&array_buffer)
+        .to_vec()
+}
+
+// fn blob_into_bytes(blob: Blob) -> Vec<u8> {
+//     let file_reader = FileReader::new().unwrap();
+//     file_reader.read_as_array_buffer(&blob).unwrap();
+
+//     let array = Uint8Array::new(&file_reader.result().unwrap());
+//     array.to_vec() // OPTIM
 // }
 
-fn blob_into_bytes(blob: Blob) -> Vec<u8> {
-    let file_reader = FileReader::new().unwrap();
-    file_reader.read_as_array_buffer(&blob).unwrap();
-
-    let array = Uint8Array::new(&file_reader.result().unwrap());
-    array.to_vec() // OPTIM
+pub async fn sleep(duration: Duration) {
+    JsFuture::from(Promise::new(&mut |yes, _| {
+        window()
+            .unwrap()
+            .set_timeout_with_callback_and_timeout_and_arguments_0(
+                &yes,
+                duration.as_millis() as i32,
+            )
+            .unwrap();
+    })).await.unwrap();
 }
 
 struct WrappedWebSocket {
     buffer: Rc<RefCell<VecDeque<u8>>>,
-    read_waker: Option<Waker>,
+    read_waker: Rc<RefCell<Option<Waker>>>,
     on_message: Closure<dyn FnMut(MessageEvent)>,
     ws: WebSocket
 }
@@ -54,27 +64,38 @@ struct WrappedWebSocket {
 impl WrappedWebSocket {
     fn new(ws: WebSocket) -> Self {
         let buffer = Rc::new(RefCell::new(VecDeque::new()));
+        let read_waker: Rc<RefCell<Option<Waker>>> = Rc::new(RefCell::new(None));
 
         // Create message receiver
         let buffer2 = Rc::clone(&buffer);
+        let read_waker2 = Rc::clone(&read_waker);
         let on_message = Closure::wrap(Box::new(move |event: MessageEvent| {
             if let Ok(blob) = event.data().dyn_into::<Blob>() {
-                let data = blob_into_bytes(blob);
-                buffer2.borrow_mut().extend(data);
+                let buffer3 = Rc::clone(&buffer2);
+                let read_waker3 = Rc::clone(&read_waker2);
+                spawn_local(async move {
+                    let data = blob_into_bytes(blob).await;
+                    buffer3.borrow_mut().extend(data);
+                    if let Some(waker) = read_waker3.borrow_mut().as_ref() {
+                        waker.wake_by_ref();
+                    }
+                });
+            } else {
+                error!("Received non-blob message from websocket");
             }
         }) as Box<dyn FnMut(MessageEvent)>);
         ws.set_onmessage(Some(on_message.as_ref().unchecked_ref()));
 
         WrappedWebSocket {
             buffer,
-            read_waker: None,
+            read_waker,
             on_message,
             ws
         }
     }
 }
 
-impl AsyncWrite for WrappedWebSocket {
+impl hyper::rt::Write for WrappedWebSocket {
     fn poll_write(self: Pin<&mut Self>, _cx: &mut Context<'_>, buf: &[u8]) -> Poll<Result<usize, IoError>> {
         match self.ws.send_with_u8_array(buf) {
             Ok(_) => Poll::Ready(Ok(buf.len())),
@@ -100,19 +121,38 @@ impl AsyncWrite for WrappedWebSocket {
     }
 }
 
-impl AsyncRead for WrappedWebSocket { // TODO impl hyper traits directly
-    fn poll_read(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut tokio::io::ReadBuf<'_>) -> Poll<Result<(), IoError>> {
-        self.read_waker = Some(cx.waker().clone()); // TODO optim
+impl hyper::rt::Read for WrappedWebSocket {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        mut buf: hyper::rt::ReadBufCursor<'_>,
+    ) -> Poll<Result<(), std::io::Error>> {
+        *self.read_waker.borrow_mut() = Some(cx.waker().clone()); // TODO optim
 
-        let mut buffer = self.buffer.borrow_mut();
-        while buf.remaining() > 0 {
-            if let Some(byte) = buffer.pop_front() { // OPTIM
-                buf.put_slice(&[byte]);
-            } else {
-                return Poll::Pending;
+        let mut n = 0;
+        unsafe {
+            let mut buf = tokio::io::ReadBuf::uninit(buf.as_mut());
+            let mut buffer = self.buffer.borrow_mut();
+            if buf.remaining() == 0 {
+                return Poll::Ready(Ok(()));
+            }
+            while buf.remaining() > 0 {
+                if let Some(byte) = buffer.pop_front() { // OPTIM
+                    buf.put_slice(&[byte]);
+                    n += 1;
+                } else {
+                    break;
+                }
             }
         }
-        
+
+        if n == 0 {
+            return Poll::Pending;
+        }
+
+        unsafe {
+            buf.advance(n);
+        }
         Poll::Ready(Ok(()))
     }
 }
@@ -130,13 +170,17 @@ pub async fn test() {
     };
     log!("Websocket: {:?}", websocket);
 
-    let websocket = TokioIo::new(WrappedWebSocket::new(websocket));
+    let websocket = WrappedWebSocket::new(websocket);
+
+    sleep(Duration::from_secs(1)).await;
+
     let (mut request_sender, connection) = conn::http1::handshake(websocket).await.unwrap();
+    log!("HTTP connection established");
 
     // spawn a task to poll the connection and drive the HTTP state
     wasm_bindgen_futures::spawn_local(async move {
         if let Err(e) = connection.await {
-            eprintln!("Error in connection: {}", e);
+            error!("Error in connection: {}", e);
         }
     });
 
@@ -146,7 +190,9 @@ pub async fn test() {
         .method("GET")
         .body(Empty::<Bytes>::new()).unwrap();
 
+    log!("Sending request: {:?}", request);
     let response = request_sender.send_request(request).await.unwrap();
+    log!("Response: {:?}", response);
     assert!(response.status() == StatusCode::OK);
 
     let request = Request::builder()
@@ -154,7 +200,8 @@ pub async fn test() {
         .method("GET")
         .body(Empty::<Bytes>::new()).unwrap();
 
+    log!("Sending request: {:?}", request);
     let response = request_sender.send_request(request).await.unwrap();
+    log!("Response: {:?}", response);
     assert!(response.status() == StatusCode::OK);
-
 }

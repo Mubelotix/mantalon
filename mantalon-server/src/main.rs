@@ -7,7 +7,7 @@ use hyper::upgrade::Upgraded;
 use hyper::{Method, StatusCode};
 use hyper::{body::Bytes, service::service_fn, Request, Response};
 use hyper_util::rt::TokioIo;
-use log::{debug, error, info};
+use log::{debug, error, info, trace};
 use multiaddr::{Multiaddr, Protocol};
 use soketto::{Data, Receiver, Sender};
 use soketto::{
@@ -214,11 +214,13 @@ async fn relay_websocket_to_transport(mut receiver: WsReceiver, mut writer: Box<
         match receiver.receive_data(&mut message).await {
             Ok(Data::Binary(n)) => {
                 assert_eq!(n, message.len());
+                trace!("Sending {}", String::from_utf8_lossy(&message));
                 writer.write_all(&message).await.unwrap();
                 writer.flush().await.unwrap();
             }
             Ok(Data::Text(n)) => {
                 assert_eq!(n, message.len());
+                trace!("Sending {}", String::from_utf8_lossy(&message));
                 writer.write_all(&message).await.unwrap();
                 writer.flush().await.unwrap();
             }
@@ -244,6 +246,8 @@ async fn relay_transport_to_websocket(mut reader: Box<dyn AsyncRead + Send + Unp
         if n == 0 {
             break;
         }
+        trace!("Received {}", String::from_utf8_lossy(&buffer[..n]));
         sender.send_binary(&buffer[..n]).await.unwrap();
+        sender.flush().await.unwrap();
     }
 }
