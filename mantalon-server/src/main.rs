@@ -54,29 +54,27 @@ async fn main() -> Result<(), BoxedError> {
     }
 }
 
-/// Handle incoming HTTP Requests.
 async fn http_handler(req: Request<Incoming>) -> Result<Response<FullBody>, BoxedError> {
-    println!("Request: {:?}", req.uri().path());
-    println!("Headers: {:?}", req.headers());
-    println!("Method: {:?}", req.method());
-
     // Check path
     let path = req.uri().path();
     if !path.starts_with("/connect/") && path != "/connect" {
+        debug!("Endpoint not found: {path}");
         let mut response = Response::new(FullBody::from("Endpoint not found. Try /connect"));
         *response.status_mut() = StatusCode::NOT_FOUND;
         return Ok(response);
     }
 
     // Check method
-    if req.method() != Method::POST {
-        let mut response = Response::new(FullBody::from("Method not allowed. Try POST"));
+    if req.method() != Method::GET && req.method() != Method::POST {
+        debug!("Method not allowed: {}", req.method());
+        let mut response = Response::new(FullBody::from("Method not allowed. Try GET or POST"));
         *response.status_mut() = StatusCode::METHOD_NOT_ALLOWED;
         return Ok(response);
     }
 
     // Check if it's a websocket upgrade request
     if !is_upgrade_request(&req) {
+        debug!("Upgrade to websocket required");
         let mut response = Response::new(FullBody::from("Upgrade to websocket required"));
         *response.status_mut() = StatusCode::UPGRADE_REQUIRED;
         return Ok(response);
@@ -87,6 +85,7 @@ async fn http_handler(req: Request<Incoming>) -> Result<Response<FullBody>, Boxe
     let addr: Multiaddr = match addr.parse() {
         Ok(addr) => addr,
         Err(e) => {
+            debug!("Invalid address: {e}");
             let mut response = Response::new(FullBody::from(format!("Invalid address: {e}")));
             *response.status_mut() = StatusCode::BAD_REQUEST;
             return Ok(response);
@@ -99,11 +98,13 @@ async fn http_handler(req: Request<Incoming>) -> Result<Response<FullBody>, Boxe
         Some(Protocol::Ip4(ip)) => IpAddr::V4(ip),
         Some(Protocol::Ip6(ip)) => IpAddr::V6(ip),
         Some(p) => {
+            debug!("Unsupported protocol: {p}");
             let mut response = Response::new(FullBody::from(format!("Unsupported protocol: {p}")));
             *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
             return Ok(response);
         }
         None => {
+            debug!("Incomplete address");
             let mut response = Response::new(FullBody::from("Incomplete address. Try something like /ip4/127.0.0.1/tcp/8080"));
             *response.status_mut() = StatusCode::BAD_REQUEST;
             return Ok(response);
@@ -127,11 +128,13 @@ async fn http_handler(req: Request<Incoming>) -> Result<Response<FullBody>, Boxe
             (Box::new(transport_reader), Box::new(transport_write))
         }
         Some(p) => {
+            debug!("Unsupported protocol: {p}");
             let mut response = Response::new(FullBody::from(format!("Unsupported protocol: {p}")));
             *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
             return Ok(response);
         }
         None => {
+            debug!("Incomplete address");
             let mut response = Response::new(FullBody::from("Incomplete address. Try something like /ip4/127.0.0.1/tcp/8080"));
             *response.status_mut() = StatusCode::BAD_REQUEST;
             return Ok(response);
@@ -140,6 +143,7 @@ async fn http_handler(req: Request<Incoming>) -> Result<Response<FullBody>, Boxe
 
     // Ensure there are no more protocols
     if let Some(p) = protocols.next() {
+        debug!("Unsupported protocol: {p}");
         let mut response = Response::new(FullBody::from(format!("Unsupported protocol: {p}")));
         *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
         return Ok(response);
@@ -157,7 +161,6 @@ async fn http_handler(req: Request<Incoming>) -> Result<Response<FullBody>, Boxe
     let response = match server.receive_request(&req) {
         Ok(response) => response,
         Err(e) => {
-            // We tried to upgrade and failed early on; tell the client about the failure however we like:
             error!("Could not upgrade connection: {e}");
             let mut response = Response::new(FullBody::from(format!("Could not upgrade connection: {e}")));
             *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
@@ -176,6 +179,8 @@ async fn http_handler(req: Request<Incoming>) -> Result<Response<FullBody>, Boxe
         };
         let fut1 = relay_websocket_to_transport(receiver, transport_write);
         let fut2 = relay_transport_to_websocket(transport_reader, sender);
+        
+        debug!("Relay now operational");
         tokio::select! {
             _ = fut1 => debug!("Websocket to transport task finished"),
             _ = fut2 => debug!("Transport to websocket task finished"),

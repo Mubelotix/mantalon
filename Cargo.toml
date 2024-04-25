@@ -1,16 +1,6 @@
-[package]
-name = "mantalon-server"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-env_logger = "0.11.3"
-futures = "0.3.30"
-http-body-util = "0.1.1"
-hyper = { version = "1.3.1", features = ["server", "http1"] }
-hyper-util = { version = "0.1.3", features = ["tokio"] }
-log = "0.4.21"
-multiaddr = "0.18"
-soketto = { version = "0.8.0", features = ["http"] }
-tokio = { version = "1.37.0", features = ["full"] }
-tokio-util = { version = "0.7.10", default-features = false, features = ["compat"] }
+[workspace]
+resolver = "2"
+members = [
+    "mantalon-client",
+    "mantalon-server",
+]

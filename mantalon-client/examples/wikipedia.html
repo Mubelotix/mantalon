@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Proxied wikipedia</title>
+</head>
+<body>
+    <script type="module">
+        import init, { test } from '../pkg/mantalon_client.js';
+
+        async function run() {
+            await init();
+            console.log("Initialized");
+            test();
+            window.test = test;
+        }
+        run();
+    </script>
+</body>
+</html>
