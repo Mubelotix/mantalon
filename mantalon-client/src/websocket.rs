@@ -171,10 +171,10 @@ impl AsyncRead for WrappedWebSocket {
 
 impl Drop for WrappedWebSocket {
     fn drop(&mut self) {
-        let _ = self.ws.remove_event_listener_with_callback("open", self.on_open.as_ref().unchecked_ref());
-        let _ = self.ws.remove_event_listener_with_callback("close", self.on_close.as_ref().unchecked_ref());
-        let _ = self.ws.remove_event_listener_with_callback("error", self.on_error.as_ref().unchecked_ref());
-        let _ = self.ws.remove_event_listener_with_callback("message", self.on_message.as_ref().unchecked_ref());
+        self.ws.set_onclose(None);
+        self.ws.set_onerror(None);
+        self.ws.set_onmessage(None);
+        self.ws.set_onopen(None);
         self.ws.close().unwrap();
     }
 }
