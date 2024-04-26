@@ -117,6 +117,7 @@ pub async fn proxiedFetch(ressource: JsValue, options: JsValue) -> Result<JsValu
             if let Some(authority) = &mut parts.authority {
                 if authority.host() == "127.0.0.1" {
                     *authority = "en.wikipedia.org".parse().unwrap();
+                    parts.scheme = Some("https".parse().unwrap());
                 }
             }
             Uri::from_parts(parts).unwrap()

@@ -66,18 +66,29 @@ pub async fn proxied_fetch<B: Body + std::fmt::Debug + 'static>(request: http::R
     debug!("Request: {request:?}");
 
     // Produce the multiaddr
+    let port = match request.uri().port_u16() {
+        Some(port) => port,
+        None => match request.uri().scheme_str() {
+            Some("http") => 80,
+            Some("https") => 443,
+            _ => {
+                error!("Unsupported scheme: {:?}", request.uri().scheme());
+                return Err(());
+            }
+        }
+    };
     let server_name = ServerName::try_from(request.uri().authority().map(|a| a.host().to_owned()).unwrap()).unwrap();
     let multiaddr = match &server_name {
-        ServerName::DnsName(domain) => format!("dnsaddr/{}", domain.as_ref()),
+        ServerName::DnsName(domain) => format!("dnsaddr/{}/tcp/{port}", domain.as_ref()),
         ServerName::IpAddress(RustlsIpAddr::V4(ip)) => {
             let [a, b, c, d] = ip.as_ref();
-            format!("ip4/{a}.{b}.{c}.{d}")
+            format!("ip4/{a}.{b}.{c}.{d}/tcp/{port}")
         },
         ServerName::IpAddress(RustlsIpAddr::V6(ip)) => {
             let array: &[u8; 16] = ip.as_ref();
             let array: &[u16; 8] = unsafe { &*(array as *const _ as *const _) };
             let [a, b, c, d, e, f, g, h] = array;
-            format!("ip6/{a}:{b}:{c}:{d}:{e}:{f}:{g}:{h}")
+            format!("ip6/{a}:{b}:{c}:{d}:{e}:{f}:{g}:{h}/tcp/{port}")
         },
         other => {
             error!("Unsupported server name type: {:?}", other);

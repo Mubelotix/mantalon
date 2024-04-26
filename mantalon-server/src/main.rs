@@ -1,4 +1,5 @@
-use std::net::{IpAddr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::sync::Arc;
 use futures::io::{BufReader, BufWriter};
 use http_body_util::Either as EitherBody;
 use hyper::body::Incoming;
@@ -8,7 +9,7 @@ use hyper::{Method, StatusCode, Uri};
 use hyper::{body::Bytes, service::service_fn, Request, Response};
 use hyper_staticfile::Static;
 use hyper_util::rt::TokioIo;
-use log::{debug, error, info, trace, warn};
+use log::*;
 use multiaddr::{Multiaddr, Protocol};
 use soketto::{Data, Receiver, Sender};
 use soketto::{
@@ -19,6 +20,9 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio_util::compat::{Compat, TokioAsyncReadCompatExt};
 use soketto::connection::Error as SockettoError;
+
+mod dns;
+use dns::*;
 
 type FullBody = http_body_util::Full<Bytes>;
 
@@ -33,6 +37,7 @@ async fn main() -> Result<(), BoxedError> {
     info!("Listening on http://{:?}", listener.local_addr().unwrap());
 
     let static_files = Static::new("mantalon-client");
+    let dns_cache = DnsCache::default();
 
     loop {
         let stream = match listener.accept().await {
@@ -47,9 +52,10 @@ async fn main() -> Result<(), BoxedError> {
         };
 
         let static_files = static_files.clone();
+        let dns_cache = Arc::clone(&dns_cache);
         tokio::spawn(async move {
             let io = TokioIo::new(stream);
-            let conn = HttpBuilder::new().serve_connection(io, service_fn(move |r| http_handler(r, static_files.clone())));            
+            let conn = HttpBuilder::new().serve_connection(io, service_fn(move |r| http_handler(r, static_files.clone(), Arc::clone(&dns_cache))));            
             let conn = conn.with_upgrades(); // Enable upgrades on the connection for the websocket upgrades to work.
             if let Err(err) = conn.await {
                 error!("HTTP connection failed {err}");
@@ -58,7 +64,7 @@ async fn main() -> Result<(), BoxedError> {
     }
 }
 
-async fn http_handler(mut req: Request<Incoming>, static_files: Static) -> Result<Response<EitherBody<FullBody, hyper_staticfile::Body>>, BoxedError> {
+async fn http_handler(mut req: Request<Incoming>, static_files: Static, dns_cache: DnsCache) -> Result<Response<EitherBody<FullBody, hyper_staticfile::Body>>, BoxedError> {
     // Check path
     let path = req.uri().path();
     if path.starts_with("/pkg/") || path == "/sw.js" {
@@ -126,12 +132,10 @@ async fn http_handler(mut req: Request<Incoming>, static_files: Static) -> Resul
 
     // Extract the IP address from the multiaddr
     let mut protocols = addr.iter();
-    let ip = match protocols.next() {
-        Some(Protocol::Ip4(ip)) => IpAddr::V4(ip),
-        Some(Protocol::Ip6(ip)) => IpAddr::V6(ip),
-        Some(Protocol::Dns(domain)) => {
-            todo!()
-        }
+    let ips = match protocols.next() {
+        Some(Protocol::Ip4(ip)) => vec![IpAddr::V4(ip)],
+        Some(Protocol::Ip6(ip)) => vec![IpAddr::V6(ip)],
+        Some(Protocol::Dns(domain) | Protocol::Dnsaddr(domain)) => resolve(dns_cache, &domain, SocketAddr::new(IpAddr::V4(Ipv4Addr::from([8,8,8,8])), 53)).await,
         Some(p) => {
             debug!("Unsupported protocol: {p}");
             let mut response = Response::new(FullBody::from(format!("Unsupported protocol: {p}")));
@@ -149,18 +153,23 @@ async fn http_handler(mut req: Request<Incoming>, static_files: Static) -> Resul
     // Build the underlying transport
     let (transport_reader, transport_write): (Box<dyn AsyncRead + Send + Unpin>, Box<dyn AsyncWrite + Send + Unpin>) = match protocols.next() {
         Some(Protocol::Tcp(port)) => {
-            let addr = SocketAddr::new(ip, port);
-            let stream = match TcpStream::connect(addr).await {
-                Ok(stream) => stream,
-                Err(e) => {
-                    error!("Could not connect to address: {e}");
-                    let mut response = Response::new(FullBody::from(format!("Could not connect to address: {e}")));
-                    *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-                    return Ok(response.map(EitherBody::Left));
+            'try_ip: {
+                for ip in &ips {
+                    let addr = SocketAddr::new(*ip, port);
+                    let stream = match TcpStream::connect(addr).await {
+                        Ok(stream) => stream,
+                        Err(e) => {
+                            error!("Could not connect to address: {e}");
+                            continue;
+                        },
+                    };
+                    let (transport_reader, transport_write) = stream.into_split();
+                    break 'try_ip (Box::new(transport_reader), Box::new(transport_write))
                 }
-            };
-            let (transport_reader, transport_write) = stream.into_split();
-            (Box::new(transport_reader), Box::new(transport_write))
+                let mut response = Response::new(FullBody::from(format!("Could not connect to any ip: {ips:?}")));
+                *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+                return Ok(response.map(EitherBody::Left));
+            }
         }
         Some(p) => {
             debug!("Unsupported protocol: {p}");
