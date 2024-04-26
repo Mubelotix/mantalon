@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use tokio_rustls::{rustls::{pki_types::ServerName, ClientConfig, RootCertStore}, TlsConnector};
+use tokio_rustls::{rustls::{pki_types::{ServerName, IpAddr as RustlsIpAddr}, ClientConfig, RootCertStore}, TlsConnector};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::*;
 use web_sys::*;
@@ -65,7 +65,29 @@ pub async fn proxied_fetch<B: Body + std::fmt::Debug + 'static>(request: http::R
 {
     debug!("Request: {request:?}");
 
-    let websocket = match WebSocket::new("ws://localhost:8000/mantalon-connect/ip4/185.15.58.224/tcp/443") {
+    // Produce the multiaddr
+    let server_name = ServerName::try_from(request.uri().authority().map(|a| a.host().to_owned()).unwrap()).unwrap();
+    let multiaddr = match &server_name {
+        ServerName::DnsName(domain) => format!("dnsaddr/{}", domain.as_ref()),
+        ServerName::IpAddress(RustlsIpAddr::V4(ip)) => {
+            let [a, b, c, d] = ip.as_ref();
+            format!("ip4/{a}.{b}.{c}.{d}")
+        },
+        ServerName::IpAddress(RustlsIpAddr::V6(ip)) => {
+            let array: &[u8; 16] = ip.as_ref();
+            let array: &[u16; 8] = unsafe { &*(array as *const _ as *const _) };
+            let [a, b, c, d, e, f, g, h] = array;
+            format!("ip6/{a}:{b}:{c}:{d}:{e}:{f}:{g}:{h}")
+        },
+        other => {
+            error!("Unsupported server name type: {:?}", other);
+            return Err(());
+        }
+    };
+
+    // Open the websocket
+    let ws_url = format!("ws://localhost:8000/mantalon-connect/{}", multiaddr);
+    let websocket = match WebSocket::new(&ws_url) {
         Ok(websocket) => WrappedWebSocket::new(websocket),
         Err(err) => {
             error!("Could not open websocket to mantalon proxy server: {:?}", err);
@@ -74,14 +96,14 @@ pub async fn proxied_fetch<B: Body + std::fmt::Debug + 'static>(request: http::R
     };
     websocket.ready().await;
 
+    // Encrypt stream
     let mut root_cert_store = RootCertStore::empty();
     root_cert_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
     let config = ClientConfig::builder()
         .with_root_certificates(root_cert_store)
         .with_no_client_auth();
     let connector = TlsConnector::from(Arc::new(config));
-    let dnsname = ServerName::try_from(request.uri().authority().map(|a| a.host().to_owned()).unwrap()).unwrap();
-    let stream = connector.connect(dnsname, websocket).await.unwrap();
+    let stream = connector.connect(server_name, websocket).await.unwrap();
     let stream = TokioIo::new(stream);
     let (mut request_sender, connection) = conn::http1::handshake(stream).await.unwrap();
 

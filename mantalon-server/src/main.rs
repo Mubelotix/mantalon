@@ -61,7 +61,6 @@ async fn main() -> Result<(), BoxedError> {
 async fn http_handler(mut req: Request<Incoming>, static_files: Static) -> Result<Response<EitherBody<FullBody, hyper_staticfile::Body>>, BoxedError> {
     // Check path
     let path = req.uri().path();
-    debug!("path {path}");
     if path.starts_with("/pkg/") || path == "/sw.js" {
         debug!("Serving static file: {}", req.uri());
         return match static_files.serve(req).await {
@@ -130,6 +129,9 @@ async fn http_handler(mut req: Request<Incoming>, static_files: Static) -> Resul
     let ip = match protocols.next() {
         Some(Protocol::Ip4(ip)) => IpAddr::V4(ip),
         Some(Protocol::Ip6(ip)) => IpAddr::V6(ip),
+        Some(Protocol::Dns(domain)) => {
+            todo!()
+        }
         Some(p) => {
             debug!("Unsupported protocol: {p}");
             let mut response = Response::new(FullBody::from(format!("Unsupported protocol: {p}")));

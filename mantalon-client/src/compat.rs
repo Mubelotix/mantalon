@@ -1,5 +1,7 @@
-use std::{pin::{self, Pin, pin}, task::{Context, Poll}};
+//! Code is copied from tokio-util crate.
+#![allow(dead_code)]
 
+use std::{pin::Pin, task::{Context, Poll}};
 use pin_project_lite::pin_project;
 
 pin_project! {

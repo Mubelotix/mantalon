@@ -31,10 +31,10 @@ pub struct WrappedWebSocket {
     buffer: Rc<RefCell<VecDeque<u8>>>,
     read_waker: Rc<RefCell<Option<Waker>>>,
     open_waker: Rc<RefCell<Option<Waker>>>,
-    on_open: Closure<dyn FnMut(Event)>,
-    on_close: Closure<dyn FnMut(Event)>,
-    on_error: Closure<dyn FnMut(Event)>,
-    on_message: Closure<dyn FnMut(MessageEvent)>,
+    _on_open: Closure<dyn FnMut(Event)>,
+    _on_close: Closure<dyn FnMut(Event)>,
+    _on_error: Closure<dyn FnMut(Event)>,
+    _on_message: Closure<dyn FnMut(MessageEvent)>,
     ws: WebSocket
 }
 
@@ -89,10 +89,10 @@ impl WrappedWebSocket {
             buffer,
             read_waker,
             open_waker,
-            on_open,
-            on_close,
-            on_error,
-            on_message,
+            _on_open: on_open,
+            _on_close: on_close,
+            _on_error: on_error,
+            _on_message: on_message,
             ws
         }
     }
