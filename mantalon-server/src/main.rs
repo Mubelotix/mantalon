@@ -8,7 +8,7 @@ use hyper::{Method, StatusCode, Uri};
 use hyper::{body::Bytes, service::service_fn, Request, Response};
 use hyper_staticfile::Static;
 use hyper_util::rt::TokioIo;
-use log::{debug, error, info, trace};
+use log::{debug, error, info, trace, warn};
 use multiaddr::{Multiaddr, Protocol};
 use soketto::{Data, Receiver, Sender};
 use soketto::{
@@ -27,7 +27,7 @@ type FullBody = http_body_util::Full<Bytes>;
 async fn main() -> Result<(), BoxedError> {
     env_logger::init();
 
-    let addr: SocketAddr = ([127, 0, 0, 1], 8080).into();
+    let addr: SocketAddr = ([127, 0, 0, 1], 8000).into();
     let listener = TcpListener::bind(addr).await?;
 
     info!("Listening on http://{:?}", listener.local_addr().unwrap());
@@ -61,12 +61,13 @@ async fn main() -> Result<(), BoxedError> {
 async fn http_handler(mut req: Request<Incoming>, static_files: Static) -> Result<Response<EitherBody<FullBody, hyper_staticfile::Body>>, BoxedError> {
     // Check path
     let path = req.uri().path();
-    if path.starts_with("/mantalon/") || path == "/sw.js" || path == "/" || path == "" {
+    debug!("path {path}");
+    if path.starts_with("/pkg/") || path == "/sw.js" || path == "/" || path.is_empty() {
         let mut uri = req.uri().clone().into_parts();
         uri.path_and_query = uri.path_and_query.map(|p| match p.as_str() {
             "" | "/" => "/index.html",
             "/sw.js" => "/sw.js",
-            p => p.trim_start_matches("/mantalon/")
+            p => p
         }.parse().unwrap());
         *req.uri_mut() = Uri::from_parts(uri).unwrap();
 
@@ -82,8 +83,8 @@ async fn http_handler(mut req: Request<Incoming>, static_files: Static) -> Resul
         };
     }
     if !path.starts_with("/mantalon-connect/") && path != "/mantalon-connect" {
-        debug!("Endpoint not found: {path}");
-        let mut response = Response::new(FullBody::from("Endpoint not found. Try /connect"));
+        warn!("Endpoint not found: {path}");
+        let mut response = Response::new(FullBody::from("Endpoint not found. Try /mantalon-connect"));
         *response.status_mut() = StatusCode::NOT_FOUND;
         return Ok(response.map(EitherBody::Left));
     }
@@ -105,7 +106,7 @@ async fn http_handler(mut req: Request<Incoming>, static_files: Static) -> Resul
     }
 
     // Extract the address from the path
-    let addr = &path[8..];
+    let addr = &path[17..];
     let addr: Multiaddr = match addr.parse() {
         Ok(addr) => addr,
         Err(e) => {
@@ -238,13 +239,11 @@ async fn relay_websocket_to_transport(mut receiver: WsReceiver, mut writer: Box<
         match receiver.receive_data(&mut message).await {
             Ok(Data::Binary(n)) => {
                 assert_eq!(n, message.len());
-                trace!("Sending {}", String::from_utf8_lossy(&message));
                 writer.write_all(&message).await.unwrap();
                 writer.flush().await.unwrap();
             }
             Ok(Data::Text(n)) => {
                 assert_eq!(n, message.len());
-                trace!("Sending {}", String::from_utf8_lossy(&message));
                 writer.write_all(&message).await.unwrap();
                 writer.flush().await.unwrap();
             }
@@ -270,7 +269,6 @@ async fn relay_transport_to_websocket(mut reader: Box<dyn AsyncRead + Send + Unp
         if n == 0 {
             break;
         }
-        trace!("Received {}", String::from_utf8_lossy(&buffer[..n]));
         sender.send_binary(&buffer[..n]).await.unwrap();
         sender.flush().await.unwrap();
     }

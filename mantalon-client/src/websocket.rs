@@ -31,10 +31,10 @@ pub struct WrappedWebSocket {
     buffer: Rc<RefCell<VecDeque<u8>>>,
     read_waker: Rc<RefCell<Option<Waker>>>,
     open_waker: Rc<RefCell<Option<Waker>>>,
-    _on_open: Closure<dyn FnMut(Event)>,
-    _on_close: Closure<dyn FnMut(Event)>,
-    _on_error: Closure<dyn FnMut(Event)>,
-    _on_message: Closure<dyn FnMut(MessageEvent)>,
+    on_open: Closure<dyn FnMut(Event)>,
+    on_close: Closure<dyn FnMut(Event)>,
+    on_error: Closure<dyn FnMut(Event)>,
+    on_message: Closure<dyn FnMut(MessageEvent)>,
     ws: WebSocket
 }
 
@@ -89,10 +89,10 @@ impl WrappedWebSocket {
             buffer,
             read_waker,
             open_waker,
-            _on_open: on_open,
-            _on_close: on_close,
-            _on_error: on_error,
-            _on_message: on_message,
+            on_open,
+            on_close,
+            on_error,
+            on_message,
             ws
         }
     }
@@ -166,5 +166,15 @@ impl AsyncRead for WrappedWebSocket {
             return Poll::Pending;
         }
         Poll::Ready(Ok(()))
+    }
+}
+
+impl Drop for WrappedWebSocket {
+    fn drop(&mut self) {
+        let _ = self.ws.remove_event_listener_with_callback("open", self.on_open.as_ref().unchecked_ref());
+        let _ = self.ws.remove_event_listener_with_callback("close", self.on_close.as_ref().unchecked_ref());
+        let _ = self.ws.remove_event_listener_with_callback("error", self.on_error.as_ref().unchecked_ref());
+        let _ = self.ws.remove_event_listener_with_callback("message", self.on_message.as_ref().unchecked_ref());
+        self.ws.close().unwrap();
     }
 }

@@ -39,4 +39,5 @@ features = [
     "Response",
     "ResponseInit",
     "Headers",
+    "Request",
 ]
