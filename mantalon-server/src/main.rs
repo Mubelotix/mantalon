@@ -62,15 +62,7 @@ async fn http_handler(mut req: Request<Incoming>, static_files: Static) -> Resul
     // Check path
     let path = req.uri().path();
     debug!("path {path}");
-    if path.starts_with("/pkg/") || path == "/sw.js" || path == "/" || path.is_empty() {
-        let mut uri = req.uri().clone().into_parts();
-        uri.path_and_query = uri.path_and_query.map(|p| match p.as_str() {
-            "" | "/" => "/index.html",
-            "/sw.js" => "/sw.js",
-            p => p
-        }.parse().unwrap());
-        *req.uri_mut() = Uri::from_parts(uri).unwrap();
-
+    if path.starts_with("/pkg/") || path == "/sw.js" {
         debug!("Serving static file: {}", req.uri());
         return match static_files.serve(req).await {
             Ok(response) => Ok(response.map(EitherBody::Right)),
@@ -83,6 +75,22 @@ async fn http_handler(mut req: Request<Incoming>, static_files: Static) -> Resul
         };
     }
     if !path.starts_with("/mantalon-connect/") && path != "/mantalon-connect" {
+        if req.method() == Method::GET {
+            let mut uri = req.uri().clone().into_parts();
+            uri.path_and_query = Some("index.html".parse().unwrap());
+            *req.uri_mut() = Uri::from_parts(uri).unwrap();
+
+            return match static_files.serve(req).await {
+                Ok(response) => Ok(response.map(EitherBody::Right)),
+                Err(e) => {
+                    error!("Static file error: {e}");
+                    let mut response = Response::new(FullBody::from("Internal server error"));
+                    *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+                    Ok(response.map(EitherBody::Left))
+                }
+            };
+        }
+
         warn!("Endpoint not found: {path}");
         let mut response = Response::new(FullBody::from("Endpoint not found. Try /mantalon-connect"));
         *response.status_mut() = StatusCode::NOT_FOUND;
@@ -256,8 +264,12 @@ async fn relay_websocket_to_transport(mut receiver: WsReceiver, mut writer: Box<
     }
 }
 
+#[allow(clippy::uninit_vec)]
 async fn relay_transport_to_websocket(mut reader: Box<dyn AsyncRead + Send + Unpin>, mut sender: WsSender) {
-    let mut buffer = [0; 1024];
+    let mut buffer = Vec::with_capacity(100_000);
+    unsafe {
+        buffer.set_len(buffer.capacity());
+    }
     loop {
         let n = match reader.read(&mut buffer).await {
             Ok(n) => n,

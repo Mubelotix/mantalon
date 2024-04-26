@@ -6,20 +6,9 @@
     <title>Proxied wikipedia</title>
 </head>
 <body>
-    <script type="module">
-        import init, { proxiedFetch } from '/pkg/mantalon_client.js';
-
-        async function run() {
-            await init();
-            window.proxiedFetch = proxiedFetch;
-
-            let rep = await proxiedFetch("https://en.wikipedia.org/wiki/Main_Page");
-            document.documentElement.innerHTML = await rep.text();
-
-            console.log("Initialized");
-        }
-        run();
-    </script>
+    <p>
+        Page is about to load... Please wait for the Mantalon service worker to be installed.
+    </p>
     <script>
         const registerServiceWorker = async () => {
             if ("serviceWorker" in navigator) {
@@ -41,6 +30,11 @@
             }
         };
         registerServiceWorker();
+
+        navigator.serviceWorker.ready.then((registration) => {
+            console.log("Service worker ready");
+            window.location.reload();
+        });
     </script>
 </body>
 </html>
