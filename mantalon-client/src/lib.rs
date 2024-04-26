@@ -38,18 +38,22 @@ macro_rules! debug {
 pub async fn read_body(mut body: Incoming) -> Option<Vec<u8>> {
     let mut body_bytes = Vec::new();
     while !body.is_end_stream() {
-        let chunk = body.frame().await.unwrap();
+        let chunk = body.frame().await;
         match chunk {
-            Ok(chunk) => match chunk.into_data() {
+            Some(Ok(chunk)) => match chunk.into_data() {
                 Ok(data) => body_bytes.extend_from_slice(&data),
                 Err(e) => {
                     error!("Received non-data frame: {:?}", e);
                     return None;
                 }
             },
-            Err(err) => {
+            Some(Err(err)) => {
                 error!("Error reading chunk: {:?}", err);
                 return None;
+            },
+            None => {
+                log!("Unexpected end of stream");
+                break;
             }
         }
     }
