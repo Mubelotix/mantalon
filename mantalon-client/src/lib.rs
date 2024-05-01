@@ -13,6 +13,8 @@ mod compat;
 mod exports;
 mod websocket;
 use websocket::*;
+mod pool;
+use pool::*;
 
 #[macro_export]
 macro_rules! log {
@@ -60,74 +62,13 @@ pub async fn read_body(mut body: Incoming) -> Option<Vec<u8>> {
     Some(body_bytes)
 }
 
-pub async fn proxied_fetch<B: Body + std::fmt::Debug + 'static>(request: http::Request<B>) -> Result<http::Response<Incoming>, ()>
-    where <B as Body>::Data: Send, <B as Body>::Error: std::error::Error + Send + Sync
-{
+pub async fn proxied_fetch(request: http::Request<Empty<Bytes>>) -> Result<http::Response<Incoming>, ()> {
     debug!("Request: {request:?}");
 
-    // Produce the multiaddr
-    let port = match request.uri().port_u16() {
-        Some(port) => port,
-        None => match request.uri().scheme_str() {
-            Some("http") => 80,
-            Some("https") => 443,
-            _ => {
-                error!("Unsupported scheme: {:?}", request.uri().scheme());
-                return Err(());
-            }
-        }
-    };
-    let server_name = ServerName::try_from(request.uri().authority().map(|a| a.host().to_owned()).unwrap()).unwrap();
-    let multiaddr = match &server_name {
-        ServerName::DnsName(domain) => format!("dnsaddr/{}/tcp/{port}", domain.as_ref()),
-        ServerName::IpAddress(RustlsIpAddr::V4(ip)) => {
-            let [a, b, c, d] = ip.as_ref();
-            format!("ip4/{a}.{b}.{c}.{d}/tcp/{port}")
-        },
-        ServerName::IpAddress(RustlsIpAddr::V6(ip)) => {
-            let array: &[u8; 16] = ip.as_ref();
-            let array: &[u16; 8] = unsafe { &*(array as *const _ as *const _) };
-            let [a, b, c, d, e, f, g, h] = array;
-            format!("ip6/{a}:{b}:{c}:{d}:{e}:{f}:{g}:{h}/tcp/{port}")
-        },
-        other => {
-            error!("Unsupported server name type: {:?}", other);
-            return Err(());
-        }
-    };
-
-    // Open the websocket
-    let ws_url = format!("ws://localhost:8000/mantalon-connect/{}", multiaddr);
-    let websocket = match WebSocket::new(&ws_url) {
-        Ok(websocket) => WrappedWebSocket::new(websocket),
-        Err(err) => {
-            error!("Could not open websocket to mantalon proxy server: {:?}", err);
-            return Err(());
-        }
-    };
-    websocket.ready().await;
-
-    // Encrypt stream
-    let mut root_cert_store = RootCertStore::empty();
-    root_cert_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-    let config = ClientConfig::builder()
-        .with_root_certificates(root_cert_store)
-        .with_no_client_auth();
-    let connector = TlsConnector::from(Arc::new(config));
-    let stream = connector.connect(server_name, websocket).await.unwrap();
-    let stream = TokioIo::new(stream);
-    let (mut request_sender, connection) = conn::http1::handshake(stream).await.unwrap();
-
-    // spawn a task to poll the connection and drive the HTTP state
-    spawn_local(async move {
-        if let Err(e) = connection.await {
-            error!("Error in connection: {}", e);
-        }
-    });
-
-    request_sender.ready().await.unwrap();
-    let response = request_sender.send_request(request).await.unwrap();
-
+    let response = POOL.send_request(request).await.map_err(|e| {
+        error!("Error sending request: {:?}", e);
+    })?;
+    
     debug!("Response: {response:?}");
     
     Ok(response)

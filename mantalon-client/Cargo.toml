@@ -18,6 +18,7 @@ http-body-util = "0.1.1"
 tokio-rustls = {version="0.26", default-features=false, features=["ring"]}
 webpki-roots = "0.26"
 pin-project-lite = "0.2.14"
+lazy_static = "1.4.0"
 
 [target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
 ring = { version = "*", features = ["wasm32_unknown_unknown_js"] }
