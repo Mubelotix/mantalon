@@ -184,6 +184,7 @@ async fn http_handler(mut req: Request<Incoming>, static_files: Static, dns_cach
             return Ok(response.map(EitherBody::Left));
         }
     };
+    debug!("Transport established to {addr}");
 
     // Ensure there are no more protocols
     if let Some(p) = protocols.next() {

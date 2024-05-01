@@ -17,7 +17,7 @@ self.addEventListener("fetch", (event) => {
         event.respondWith(fetch(event.request));
         return;
     }
-    if (url.hostname === "127.0.0.1" || url.hostname === "en.wikipedia.org") {
+    if (url.hostname === "127.0.0.1" || url.hostname === "localhost" || url.hostname === "en.wikipedia.org") {
         console.log("Proxying", url.href);
         event.respondWith(proxiedFetchWrapper(event.request));
         return;

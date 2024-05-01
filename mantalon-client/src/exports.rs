@@ -1,5 +1,7 @@
 #![allow(non_snake_case)]
 
+use std::str::FromStr;
+
 use crate::*;
 use http::{HeaderName, HeaderValue, Method, Uri};
 use js_sys::{Array, Function, Iterator, Map, Reflect::*};
@@ -115,7 +117,7 @@ pub async fn proxiedFetch(ressource: JsValue, options: JsValue) -> Result<JsValu
         Ok(uri) => {
             let mut parts = uri.into_parts();
             if let Some(authority) = &mut parts.authority {
-                if authority.host() == "127.0.0.1" {
+                if authority.host() == "127.0.0.1" || authority.host() == "localhost" {
                     *authority = "en.wikipedia.org".parse().unwrap();
                     parts.scheme = Some("https".parse().unwrap());
                 }
@@ -136,7 +138,22 @@ pub async fn proxiedFetch(ressource: JsValue, options: JsValue) -> Result<JsValu
 
     // Send request
     match proxied_fetch(request).await {
-        Ok(response) => {
+        Ok(mut response) => {
+            // Prevent page from redirecting outside of the proxy
+            if let Some(location) = response.headers().get("location").and_then(|l| l.to_str().ok()).and_then(|l| l.parse::<Uri>().ok()) {
+                let mut parts = location.into_parts();
+                if let Some(mut authority) = parts.authority {
+                    if authority.host() == "en.wikipedia.org" {
+                        parts.scheme = Some(http::uri::Scheme::HTTP);
+                        authority = "localhost:8000".parse().unwrap();
+                        parts.authority = Some(authority);
+                        let uri = Uri::from_parts(parts).unwrap();
+                        response.headers_mut().insert("location", uri.to_string().parse().unwrap());
+                    }
+                }
+            }
+
+            // Convert response to JS
             let mut init = ResponseInit::new();
             init.status(response.status().as_u16());
             let headers = Headers::new()?;
