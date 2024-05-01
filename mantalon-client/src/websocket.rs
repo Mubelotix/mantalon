@@ -39,7 +39,7 @@ pub struct WrappedWebSocket {
 }
 
 impl WrappedWebSocket {
-    pub fn new(ws: WebSocket) -> Self {
+    pub fn new(ws: WebSocket, on_close: impl FnOnce() + 'static) -> Self {
         let buffer = Rc::new(RefCell::new(VecDeque::new()));
         let read_waker: Rc<RefCell<Option<Waker>>> = Rc::new(RefCell::new(None));
         let open_waker: Rc<RefCell<Option<Waker>>> = Rc::new(RefCell::new(None));
@@ -54,8 +54,12 @@ impl WrappedWebSocket {
         ws.set_onopen(Some(on_open.as_ref().unchecked_ref()));
 
         // Create close listener
+        let mut on_close_inner = Some(on_close);
         let on_close = Closure::wrap(Box::new(move |_| {
             error!("Websocket closed");
+            if let Some(on_close) = on_close_inner.take() {
+                on_close();
+            }
         }) as Box<dyn FnMut(Event)>);
         ws.set_onclose(Some(on_close.as_ref().unchecked_ref()));
 

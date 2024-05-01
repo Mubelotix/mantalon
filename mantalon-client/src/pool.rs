@@ -73,8 +73,11 @@ impl Pool {
 
                 // Open the websocket
                 let ws_url = format!("ws://localhost:8000/mantalon-connect/{}", multiaddr);
+                let connections2 = Rc::clone(&self.connections);
+                let multiaddr2 = multiaddr.clone();
+                let on_close = || spawn_local(async move { connections2.write().await.remove(&multiaddr2); });
                 let websocket = match WebSocket::new(&ws_url) {
-                    Ok(websocket) => WrappedWebSocket::new(websocket),
+                    Ok(websocket) => WrappedWebSocket::new(websocket, on_close),
                     Err(err) => {
                         error!("Could not open websocket to mantalon proxy server: {:?}", err);
                         todo!()
