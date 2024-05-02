@@ -12,6 +12,10 @@ Mantalon uses a proxy to evade CORS restrictions, but proxies the encrypted stre
 
 In order to use Mantalon, you need to host the proxy on your own server. The proxy supports whitelisting over both source and target domains to prevent abuse.
 
+## Encryption security
+
+Mantalon relies on the cornerstone libraries of the Rust ecosystem. Encryption is done by `ring` and `rustls` while IO is made with `hyper` and `tokio`. These are extremely secure and battle-tested dependencies.
+
 ## Usage
 
 
