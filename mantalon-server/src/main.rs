@@ -1,25 +1,30 @@
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::sync::Arc;
 use futures::io::{BufReader, BufWriter};
 use http_body_util::Either as EitherBody;
-use hyper::body::Incoming;
-use hyper::server::conn::http1::Builder as HttpBuilder;
-use hyper::upgrade::Upgraded;
-use hyper::{Method, StatusCode, Uri};
-use hyper::{body::Bytes, service::service_fn, Request, Response};
+use hyper::{
+    body::{Bytes, Incoming},
+    server::conn::http1::Builder as HttpBuilder,
+    service::service_fn,
+    upgrade::Upgraded,
+    Method, Request, Response, StatusCode, Uri,
+};
 use hyper_staticfile::Static;
 use hyper_util::rt::TokioIo;
 use log::*;
 use multiaddr::{Multiaddr, Protocol};
-use soketto::{Data, Receiver, Sender};
+use soketto::connection::Error as SockettoError;
 use soketto::{
     handshake::http::{is_upgrade_request, Server},
-    BoxedError,
+    BoxedError, Data, Receiver, Sender,
 };
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream};
+use std::{
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+    sync::Arc,
+};
+use tokio::{
+    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
+    net::{TcpListener, TcpStream},
+};
 use tokio_util::compat::{Compat, TokioAsyncReadCompatExt};
-use soketto::connection::Error as SockettoError;
 
 mod dns;
 mod handler;
