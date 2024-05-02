@@ -3,6 +3,8 @@
 use crate::*;
 use http::{HeaderName, HeaderValue, Method, Uri};
 use js_sys::{Array, Function, Iterator, Map, Reflect::*};
+use url::Url;
+use urlpattern::UrlPatternMatchInput;
 use web_sys::Request;
 
 fn from_method(value: JsValue) -> Method {
@@ -52,6 +54,64 @@ fn from_headers(value: JsValue) -> http::HeaderMap::<http::HeaderValue> {
         headers.append(name, value);
     }
     headers
+}
+
+pub async fn complete_response(response: http::Response<Incoming>) -> http::Response<Vec<u8>> {
+    let (head, body) = response.into_parts();
+    let body = read_body(body).await;
+    http::Response::from_parts(head, body.unwrap_or_default())
+}
+
+fn search_haystack<T: PartialEq>(needle: &[T], haystack: &[T]) -> Option<usize> {
+    if needle.is_empty() {
+        return Some(0);
+    }
+
+    haystack.windows(needle.len()).position(|subslice| subslice == needle)
+}
+
+pub async fn apply_content_edit(response: &mut http::Response<Vec<u8>>, content_edit: &ParsedContentEdit) {
+    let content_type = response.headers().get("content-type").and_then(|v| v.to_str().ok()).unwrap_or("unknown");
+    if content_type == "text/html" || content_type.starts_with("text/html;") {
+        if let Some(js_path) = &content_edit.js {
+            // Only replace when the closing html tag is at the end (easy case)
+            if response.body().ends_with(b"</html>") {
+                let len = response.body().len();
+                response.body_mut().truncate(len - 7);
+                response.body_mut().extend_from_slice(format!("<script src=\"/pkg/config/{js_path}\"></script></html>").as_bytes());
+            } else {
+                error!("Parse DOM")
+            }
+        }
+    
+        if let Some(css_path) = &content_edit.css {
+            // Only replace when only one closing head tag is present.
+            // Otherwise we don't know which is the right and which might be some XSS attack.
+            if let Some(idx) = search_haystack(b"</head>", response.body()) {
+                if search_haystack(b"</head>", &response.body()[idx+7..]).is_none() {
+                    response.body_mut().splice(idx..idx+7, format!("<link rel=\"stylesheet\" href=\"/pkg/config/{css_path}\">").into_bytes().into_iter());
+                } else {
+                    error!("Parse DOM (css)")
+                }
+            }
+        }
+    }
+    
+    for substitution in &content_edit.substitute {
+        let pattern = &substitution.pattern;
+        let replacement = &substitution.replacement;
+        let max_replacements = substitution.max_replacements.unwrap_or(usize::MAX);
+        let mut idx_start = 0;
+        let mut i = 0;
+        while let Some(idx) = search_haystack(pattern.as_bytes(), &response.body()[idx_start..]) {
+            response.body_mut().splice(idx..idx+pattern.len(), replacement.clone().into_bytes().into_iter());
+            idx_start += idx + replacement.len();
+            i += 1;
+            if i >= max_replacements {
+                break;
+            }
+        }
+    }
 }
 
 /// Tries to replicate [fetch](https://developer.mozilla.org/en-US/docs/Web/API/fetch)
@@ -110,7 +170,7 @@ pub async fn proxiedFetch(ressource: JsValue, options: JsValue) -> Result<JsValu
         }
     }
 
-    // Build final request
+    // Build final URI
     let uri = match url.parse::<Uri>() {
         Ok(uri) => {
             let mut parts = uri.into_parts();
@@ -127,46 +187,63 @@ pub async fn proxiedFetch(ressource: JsValue, options: JsValue) -> Result<JsValu
             return Err(JsValue::from_str("Invalid URL"));
         },
     };
+
+    // Get content edit
+    let url = Url::parse(&uri.to_string()).unwrap();
+    let pattern_match_input = UrlPatternMatchInput::Url(url);
+    let mut content_edit = None;
+    for ce in MANIFEST.content_edits.iter() {
+        if ce.matches.iter().any(|pattern| pattern.test(pattern_match_input.clone()).unwrap_or_default()) {
+            content_edit = Some(ce);
+            break;
+        }
+    }
+
+    // Build final request
     let mut request = http::Request::builder()
         .method(method)
-        .uri(uri)
+        .uri(uri.clone())
         .body(Empty::<Bytes>::new())
         .unwrap();
     *request.headers_mut() = headers;
 
     // Send request
-    match proxied_fetch(request).await {
-        Ok(mut response) => {
-            // Prevent page from redirecting outside of the proxy
-            if let Some(location) = response.headers().get("location").and_then(|l| l.to_str().ok()).and_then(|l| l.parse::<Uri>().ok()) {
-                let mut parts = location.into_parts();
-                if let Some(mut authority) = parts.authority {
-                    if authority.host() == "en.wikipedia.org" {
-                        parts.scheme = Some(http::uri::Scheme::HTTP);
-                        authority = "localhost:8000".parse().unwrap();
-                        parts.authority = Some(authority);
-                        let uri = Uri::from_parts(parts).unwrap();
-                        response.headers_mut().insert("location", uri.to_string().parse().unwrap());
-                    }
-                }
-            }
+    let mut response = match proxied_fetch(request).await {
+        Ok(response) => complete_response(response).await,
+        Err(()) => return Err(JsValue::from_str("Error")),
+    };
 
-            // Convert response to JS
-            let mut init = ResponseInit::new();
-            init.status(response.status().as_u16());
-            let headers = Headers::new()?;
-            for (name, value) in response.headers() {
-                headers.append(name.as_str(), value.to_str().unwrap())?;
-            }
-            init.headers(&headers);
-            let mut body = read_body(response.into_body()).await;
-
-            let js_response = Response::new_with_opt_u8_array_and_init(body.as_deref_mut(), &init)?;
-
-            Ok(js_response.into())
-        },
-        Err(()) => Err(JsValue::from_str("Error")),
+    // Apply content edit
+    if let Some(content_edit) = content_edit {
+        apply_content_edit(&mut response, content_edit).await;
     }
+
+    // Prevent page from redirecting outside of the proxy
+    if let Some(location) = response.headers().get("location").and_then(|l| l.to_str().ok()).and_then(|l| l.parse::<Uri>().ok()) {
+        let mut parts = location.into_parts();
+        if let Some(mut authority) = parts.authority {
+            if authority.host() == "en.wikipedia.org" {
+                parts.scheme = Some(http::uri::Scheme::HTTP);
+                authority = "localhost:8000".parse().unwrap();
+                parts.authority = Some(authority);
+                let uri = Uri::from_parts(parts).unwrap();
+                response.headers_mut().insert("location", uri.to_string().parse().unwrap());
+            }
+        }
+    }
+
+    // Convert response to JS
+    let mut init = ResponseInit::new();
+    init.status(response.status().as_u16());
+    let headers = Headers::new()?;
+    for (name, value) in response.headers() {
+        headers.append(name.as_str(), value.to_str().unwrap())?;
+    }
+    init.headers(&headers);
+    let mut body = response.into_body();
+    let js_response = Response::new_with_opt_u8_array_and_init(Some(&mut body), &init)?;
+
+    Ok(js_response.into())
 }
 
 #[wasm_bindgen]

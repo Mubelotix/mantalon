@@ -38,10 +38,11 @@ type FullBody = http_body_util::Full<Bytes>;
 #[derive(Parser, Debug)]
 #[command(version, about)]
 struct Args {
-    /// Path to the Mantalon manifest.
-    /// Will be served at /pkg/mantalon-manifest.json
+    /// Path to the Mantalon config folder.
+    /// Should contain manifest.json and files to inject.
+    /// Will be served at /pkg/config
     #[arg(short, long)]
-    manifest_path: Option<String>,
+    config_path: Option<String>,
 }
 
 
@@ -51,11 +52,10 @@ async fn main() -> Result<(), BoxedError> {
     let args = Args::parse();
     env_logger::init();
 
-    let manifest_path = args.manifest_path.map(|p| {let p: &'static str = p.leak(); p});
-
     let addr: SocketAddr = ([127, 0, 0, 1], 8000).into();
     let listener = TcpListener::bind(addr).await?;
     let static_files = Static::new("mantalon-client");
+    let config_static_files = Static::new(args.config_path.unwrap_or_default());
     let dns_cache = DnsCache::default();
 
     info!("Listening on http://{:?}", listener.local_addr().unwrap());
@@ -73,8 +73,9 @@ async fn main() -> Result<(), BoxedError> {
         };
 
         let static_files = static_files.clone();
+        let config_static_files = config_static_files.clone();
         let dns_cache = Arc::clone(&dns_cache);
-        let service = service_fn(move |r| http_handler(r, static_files.clone(), Arc::clone(&dns_cache), manifest_path));
+        let service = service_fn(move |r| http_handler(r, static_files.clone(), config_static_files.clone(), Arc::clone(&dns_cache)));
         tokio::spawn(async move {
             let io = TokioIo::new(stream);
             let conn = HttpBuilder::new().serve_connection(io, service);

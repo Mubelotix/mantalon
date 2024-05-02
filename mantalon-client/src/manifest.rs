@@ -2,6 +2,7 @@ use std::{cell::UnsafeCell, collections::HashMap, ops::Deref};
 use crate::*;
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
+use url::Url;
 use urlpattern::{UrlPattern, UrlPatternInit};
 use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::JsFuture;
@@ -21,10 +22,21 @@ pub struct ContentEdit {
     pub matches: Vec<String>,
     pub js: Option<String>,
     pub css: Option<String>,
+    pub override_url: Option<String>,
+    #[serde(default)]
+    pub substitute: Vec<Substitution>,
     #[serde(default)]
     pub add_headers: HashMap<String, String>,
     #[serde(default)]
     pub insert_headers: HashMap<String, String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Substitution {
+    pub pattern: String,
+    pub replacement: String,
+    #[serde(default)]
+    pub max_replacements: Option<usize>,
 }
 
 #[derive(Default, Debug)]
@@ -41,6 +53,8 @@ pub struct ParsedContentEdit {
     pub matches: Vec<UrlPattern>,
     pub js: Option<String>,
     pub css: Option<String>,
+    pub override_url: Option<String>,
+    pub substitute: Vec<Substitution>,
     pub add_headers: HashMap<String, String>,
     pub insert_headers: HashMap<String, String>,
 }
@@ -54,6 +68,8 @@ pub enum UpdateManifestError {
     JsonError(JsValue),
     JsonError2(JsValue),
     SerdeError(serde_wasm_bindgen::Error),
+    MissingDomain,
+    InvalidBaseDomain(url::ParseError),
 }
 
 impl std::fmt::Display for UpdateManifestError {
@@ -65,6 +81,8 @@ impl std::fmt::Display for UpdateManifestError {
             UpdateManifestError::JsonError(e) => write!(f, "Error reading body as JSON: {:?}", e),
             UpdateManifestError::JsonError2(e) => write!(f, "Error parsing JSON: {:?}", e),
             UpdateManifestError::SerdeError(e) => write!(f, "Error deserializing manifest: {:?}", e),
+            UpdateManifestError::MissingDomain => write!(f, "Manifest must have at least one domain"),
+            UpdateManifestError::InvalidBaseDomain(e) => write!(f, "Error parsing base url: {:?}", e),
         }
     }
 }
@@ -72,8 +90,8 @@ impl std::fmt::Display for UpdateManifestError {
 impl std::error::Error for UpdateManifestError {}
 
 pub async fn update_manifest() -> Result<(), UpdateManifestError> {
-    let promise = window().map(|w| w.fetch_with_str("/pkg/manifest.json"))
-        .or_else(|| js_sys::global().dyn_into::<ServiceWorkerGlobalScope>().ok().map(|sw| sw.fetch_with_str("/pkg/manifest.json")))
+    let promise = window().map(|w| w.fetch_with_str("/pkg/config/manifest.json"))
+        .or_else(|| js_sys::global().dyn_into::<ServiceWorkerGlobalScope>().ok().map(|sw| sw.fetch_with_str("/pkg/config/manifest.json")))
         .ok_or(UpdateManifestError::NoWindow)?;
     let future = JsFuture::from(promise);
     let response = future.await.map_err(UpdateManifestError::FetchError)?;
@@ -91,10 +109,13 @@ pub async fn update_manifest() -> Result<(), UpdateManifestError> {
         rewrite_location: manifest.rewrite_location,
         content_edits: Vec::new(),
     };
+    let base_domain = parsed_manifest.domains.first().ok_or(UpdateManifestError::MissingDomain)?;
+    let base_url = format!("https://{}/", base_domain);
+    let base_url = Url::parse(&base_url).map_err(UpdateManifestError::InvalidBaseDomain)?;
     for edit in manifest.content_edits {
         let mut matches = Vec::new();
         for pattern in edit.matches {
-            let pattern_init = match UrlPatternInit::parse_constructor_string::<regex::Regex>(&pattern, None) {
+            let pattern_init = match UrlPatternInit::parse_constructor_string::<regex::Regex>(&pattern, Some(base_url.clone())) {
                 Ok(init) => init,
                 Err(e) => {
                     error!("Invalid pattern {pattern:?}: {:?}", e);
@@ -115,6 +136,8 @@ pub async fn update_manifest() -> Result<(), UpdateManifestError> {
             matches,
             js: edit.js,
             css: edit.css,
+            override_url: edit.override_url,
+            substitute: edit.substitute,
             add_headers: edit.add_headers,
             insert_headers: edit.insert_headers,
         };

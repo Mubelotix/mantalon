@@ -1,0 +1,73 @@
+/* Taken from https://vi.wikipedia.org/wiki/Th%C3%A0nh_vi%C3%AAn:Plantaest/pink-theme.css */
+
+body:not(.skin-contenttranslation), body:not(.skin-contenttranslation) .mw-page-container, .mw-sidebar, .header-container.header-chrome, .minerva-footer, .vector-header-container {
+    background-color: #fad5db !important;
+    border-right: none !important;
+}
+
+#mw-page-base {
+    background-color: #fad5db;
+	background-image: none;
+}
+
+a, .vector-toc .vector-toc-link {
+    color: #ff00dd !important;
+}
+
+.mw-body, .vector-pinned-container {
+    border-color: transparent !important;
+    box-shadow: 0 0.25em 0.6em -0.15em rgb(0 0 0 / 15%);
+    background-color: #fee8eb;
+}
+
+.vector-menu-tabs {
+	padding-left: 0;
+}
+
+.vector-menu-tabs .selected {
+    background: #fee8eb;
+}
+
+.vector-menu-tabs li, .vector-menu-dropdown {
+	background: #fee8eba1;
+}
+
+.vector-menu-tabs, .vector-menu-tabs a, #mw-head .vector-menu-dropdown h3 {
+    background-image: none !important;
+}
+
+body:not(.ns-0):not(.ns-100) .vector-menu-tabs a, body:not(.ns-0):not(.ns-100) .vector-menu-tabs, body:not(.ns-0):not(.ns-100) .vector-menu-tabs ul, body:not(.ns-0):not(.ns-100) #mw-head .vector-menu h5, body:not(.ns-0):not(.ns-100) #mw-head .vector-menu h3, body:not(.ns-0):not(.ns-100) .vector-menu h5 a {
+    background-image: none;
+}
+
+body:not(.ns-0):not(.ns-100) .vector-menu-tabs ul li:not(.selected) {
+    background: #fee8eba1;
+    background-image: none !important;
+}
+
+/* Main Page */
+
+@media (min-width: 576px) {
+	.main-box, .main-header {
+	    box-shadow: 0px 2px 3px #bebab5 !important;
+	}
+}
+
+/* Logo */
+.skin-vector #p-logo a {
+	background-image: url(//upload.wikimedia.org/wikipedia/commons/f/fb/Wikipedia-logo-v2-vi.svg) !important;
+}
+
+/* Fix New Vector */
+.skin-vector-search-vue .mw-body {
+	padding: 1.25em 1.0em 1.5em;
+}
+
+/* Vector Menu */
+.vector-menu-dropdown ul {
+    box-shadow: 0 0.25em 0.6em -0.15em rgb(0 0 0 / 15%);
+}
+
+.vector-menu-dropdown .vector-menu-content, .mm-submenu {
+	border: none !important;
+}

@@ -5,12 +5,25 @@
     "rewrite_location": true,
     "content_edits": [
         {
-            "matches": ["*"],
-            "js": "script.js",
+            "matches": ["https://en.wikipedia.org/wiki/Amboise"],
+            "js": "injected.js",
             "css": "style.css",
+            "override_url": "https://en.wikipedia.org/wiki/Main_Page",
+            "substitute": [
+                {
+                    "pattern": "Wikipedia",
+                    "replacement": "Wikipedia (beta)",
+                    "max_replacements": 1
+                }
+            ],
             "add_headers": {
                 "Content-Security-Policy": "default-src 'self';"
             }
+        },
+        {
+            "matches": ["https://en.wikipedia.org/wiki/*"],
+            "js": "injected.js",
+            "css": "pink-theme.css"
         }
     ]
 }

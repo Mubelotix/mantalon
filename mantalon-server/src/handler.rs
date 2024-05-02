@@ -1,18 +1,23 @@
-use tokio::fs::read_to_string;
-
 use crate::*;
 
-pub async fn http_handler(mut req: Request<Incoming>, static_files: Static, dns_cache: DnsCache, manifest_path: Option<&'static str>) -> Result<Response<EitherBody<FullBody, hyper_staticfile::Body>>, BoxedError> {
+pub async fn http_handler(mut req: Request<Incoming>, static_files: Static, config_static_files: Static, dns_cache: DnsCache) -> Result<Response<EitherBody<FullBody, hyper_staticfile::Body>>, BoxedError> {
     // Check path
     let path = req.uri().path();
-    if path == "/pkg/manifest.json" {
-        debug!("Serving manifest file");
-        let manifest = match manifest_path {
-            Some(manifest_path) => read_to_string(manifest_path).await?,
-            None => "{}".to_string(),
+    if path.starts_with("/pkg/config") {
+        let mut uri_parts = req.uri().clone().into_parts();
+        uri_parts.path_and_query = Some(path.trim_start_matches("/pkg/config").parse().unwrap());
+        *req.uri_mut() = Uri::from_parts(uri_parts).unwrap();
+        
+        debug!("Serving static config file: {}", req.uri());
+        return match config_static_files.serve(req).await {
+            Ok(response) => Ok(response.map(EitherBody::Right)),
+            Err(e) => {
+                error!("Static file error: {e}");
+                let mut response = Response::new(FullBody::from("Internal server error"));
+                *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+                Ok(response.map(EitherBody::Left))
+            }
         };
-        let response = Response::builder().header("Content-Type", "application/json").body(FullBody::from(manifest))?;
-        return Ok(response.map(EitherBody::Left));
     }
     if path.starts_with("/pkg/") || path == "/sw.js" {
         debug!("Serving static file: {}", req.uri());

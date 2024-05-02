@@ -775,6 +775,7 @@ dependencies = [
  "serde-wasm-bindgen",
  "tokio",
  "tokio-rustls",
+ "url",
  "urlpattern",
  "wasm-bindgen",
  "wasm-bindgen-futures",
