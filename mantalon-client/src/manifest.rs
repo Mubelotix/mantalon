@@ -1,6 +1,6 @@
 use std::{cell::UnsafeCell, collections::HashMap, ops::Deref};
 use crate::*;
-use http::{uri::InvalidUri, Uri};
+use http::{uri::{Authority, InvalidUri}, Uri};
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use url::Url;
@@ -40,8 +40,9 @@ pub struct Substitution {
     pub max_replacements: Option<usize>,
 }
 
-#[derive(Default, Debug)]
+#[derive(Debug)]
 pub struct ParsedManifest {
+    pub base_authority: Authority,
     pub domains: Vec<String>,
     pub landing_page: String,
     pub https_only: bool,
@@ -70,7 +71,8 @@ pub enum UpdateManifestError {
     JsonError2(JsValue),
     SerdeError(serde_wasm_bindgen::Error),
     MissingDomain,
-    InvalidBaseDomain(url::ParseError),
+    InvalidBaseAuthority(InvalidUri),
+    InvalidBaseUrl(url::ParseError),
     InvalidOverrideUrl(InvalidUri),
 }
 
@@ -84,7 +86,8 @@ impl std::fmt::Display for UpdateManifestError {
             UpdateManifestError::JsonError2(e) => write!(f, "Error parsing JSON: {:?}", e),
             UpdateManifestError::SerdeError(e) => write!(f, "Error deserializing manifest: {:?}", e),
             UpdateManifestError::MissingDomain => write!(f, "Manifest must have at least one domain"),
-            UpdateManifestError::InvalidBaseDomain(e) => write!(f, "Error parsing base url: {:?}", e),
+            UpdateManifestError::InvalidBaseAuthority(e) => write!(f, "Error parsing base authority: {:?}", e),
+            UpdateManifestError::InvalidBaseUrl(e) => write!(f, "Error parsing base url: {:?}", e),
             UpdateManifestError::InvalidOverrideUrl(e) => write!(f, "Error parsing override url: {:?}", e),
         }
     }
@@ -105,16 +108,17 @@ pub async fn update_manifest() -> Result<(), UpdateManifestError> {
     let manifest = serde_wasm_bindgen::from_value::<Manifest>(json).map_err(UpdateManifestError::SerdeError)?;
 
     // Process some parts of the manifest
+    let base_domain = manifest.domains.first().ok_or(UpdateManifestError::MissingDomain)?.clone();
     let mut parsed_manifest = ParsedManifest {
+        base_authority: Authority::try_from(base_domain.as_str()).map_err(UpdateManifestError::InvalidBaseAuthority)?,
         domains: manifest.domains,
         landing_page: manifest.landing_page,
         https_only: manifest.https_only,
         rewrite_location: manifest.rewrite_location,
         content_edits: Vec::new(),
     };
-    let base_domain = parsed_manifest.domains.first().ok_or(UpdateManifestError::MissingDomain)?;
     let base_url = format!("https://{}/", base_domain);
-    let base_url = Url::parse(&base_url).map_err(UpdateManifestError::InvalidBaseDomain)?;
+    let base_url = Url::parse(&base_url).map_err(UpdateManifestError::InvalidBaseUrl)?;
     for edit in manifest.content_edits {
         let mut matches = Vec::new();
         for pattern in edit.matches {
@@ -154,10 +158,22 @@ pub async fn update_manifest() -> Result<(), UpdateManifestError> {
     Ok(())
 }
 
-#[derive(Default)]
 pub struct StaticManifest(UnsafeCell<ParsedManifest>);
 unsafe impl Sync for StaticManifest {} // Wasm is singlethreaded
 unsafe impl Send for StaticManifest {} // Wasm is singlethreaded
+
+impl Default for StaticManifest {
+    fn default() -> Self {
+        StaticManifest(UnsafeCell::new(ParsedManifest {
+            base_authority: Authority::from_static("localhost"),
+            domains: vec!["localhost".to_string()],
+            landing_page: "/".to_string(),
+            https_only: false,
+            rewrite_location: false,
+            content_edits: Vec::new(),
+        }))
+    }
+}
 
 impl Deref for StaticManifest {
     type Target = ParsedManifest;

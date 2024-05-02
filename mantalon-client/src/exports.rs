@@ -188,7 +188,7 @@ pub async fn proxiedFetch(ressource: JsValue, options: JsValue) -> Result<JsValu
             let mut parts = uri.into_parts();
             if let Some(authority) = &mut parts.authority {
                 if authority.host() == "127.0.0.1" || authority.host() == "localhost" {
-                    *authority = "en.wikipedia.org".parse().unwrap();
+                    *authority = MANIFEST.base_authority.clone();
                     parts.scheme = Some("https".parse().unwrap());
                 }
             }
@@ -232,9 +232,9 @@ pub async fn proxiedFetch(ressource: JsValue, options: JsValue) -> Result<JsValu
     if let Some(location) = response.headers().get("location").and_then(|l| l.to_str().ok()).and_then(|l| l.parse::<Uri>().ok()) {
         let mut parts = location.into_parts();
         if let Some(mut authority) = parts.authority {
-            if authority.host() == "en.wikipedia.org" {
+            if MANIFEST.domains.iter().any(|d| authority.host() == d) { // TODO: use authority instead of host
                 parts.scheme = Some(http::uri::Scheme::HTTP);
-                authority = "localhost:8000".parse().unwrap();
+                authority = "localhost:8000".parse().unwrap(); // TODO: Unhardcode
                 parts.authority = Some(authority);
                 let uri = Uri::from_parts(parts).unwrap();
                 response.headers_mut().insert("location", uri.to_string().parse().unwrap());
