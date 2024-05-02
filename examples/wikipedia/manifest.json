@@ -1,0 +1,16 @@
+{
+    "domains": ["en.wikipedia.org"],
+    "landing_page": "landing.html",
+    "https_only": true,
+    "rewrite_location": true,
+    "content_edits": [
+        {
+            "matches": ["*"],
+            "js": "script.js",
+            "css": "style.css",
+            "add_headers": {
+                "Content-Security-Policy": "default-src 'self';"
+            }
+        }
+    ]
+}

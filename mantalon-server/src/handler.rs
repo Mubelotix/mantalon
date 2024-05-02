@@ -1,8 +1,19 @@
+use tokio::fs::read_to_string;
+
 use crate::*;
 
-pub async fn http_handler(mut req: Request<Incoming>, static_files: Static, dns_cache: DnsCache) -> Result<Response<EitherBody<FullBody, hyper_staticfile::Body>>, BoxedError> {
+pub async fn http_handler(mut req: Request<Incoming>, static_files: Static, dns_cache: DnsCache, manifest_path: Option<&'static str>) -> Result<Response<EitherBody<FullBody, hyper_staticfile::Body>>, BoxedError> {
     // Check path
     let path = req.uri().path();
+    if path == "/pkg/manifest.json" {
+        debug!("Serving manifest file");
+        let manifest = match manifest_path {
+            Some(manifest_path) => read_to_string(manifest_path).await?,
+            None => "{}".to_string(),
+        };
+        let response = Response::builder().header("Content-Type", "application/json").body(FullBody::from(manifest))?;
+        return Ok(response.map(EitherBody::Left));
+    }
     if path.starts_with("/pkg/") || path == "/sw.js" {
         debug!("Serving static file: {}", req.uri());
         return match static_files.serve(req).await {

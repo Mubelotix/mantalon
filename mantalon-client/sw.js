@@ -17,19 +17,14 @@ self.addEventListener("fetch", (event) => {
         event.respondWith(fetch(event.request));
         return;
     }
-    if (url.hostname === "127.0.0.1" || url.hostname === "localhost" || url.hostname === "en.wikipedia.org") {
-        console.log("Proxying", url.href);
-        event.respondWith(proxiedFetchWrapper(event.request));
-        return;
-    } else {
-        console.log("ignoring", url.href);
-    }
+    event.respondWith(proxiedFetchWrapper(event.request));
 });
 
 // Load Mantalon library
 import init, { proxiedFetch } from '/pkg/mantalon_client.js';
 async function run() {
     await init();
+    
     self.proxiedFetch = proxiedFetch;
     console.log("Initialized");
 }

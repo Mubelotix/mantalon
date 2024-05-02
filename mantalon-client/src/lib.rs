@@ -15,6 +15,8 @@ mod websocket;
 use websocket::*;
 mod pool;
 use pool::*;
+mod manifest;
+use manifest::*;
 
 #[macro_export]
 macro_rules! log {
@@ -93,6 +95,8 @@ pub async fn main() {
             error!("panic occurred");
         }
     }));
+
+    update_manifest().await.expect("Error updating manifest");
 
     debug!("Proxy library ready");
 }

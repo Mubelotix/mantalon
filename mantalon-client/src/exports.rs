@@ -1,7 +1,5 @@
 #![allow(non_snake_case)]
 
-use std::str::FromStr;
-
 use crate::*;
 use http::{HeaderName, HeaderValue, Method, Uri};
 use js_sys::{Array, Function, Iterator, Map, Reflect::*};
