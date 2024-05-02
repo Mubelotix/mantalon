@@ -168,3 +168,33 @@ pub async fn proxiedFetch(ressource: JsValue, options: JsValue) -> Result<JsValu
         Err(()) => Err(JsValue::from_str("Error")),
     }
 }
+
+#[wasm_bindgen]
+pub fn getProxiedDomains() -> Array {
+    Array::from_iter(MANIFEST.domains.iter().map(|d| JsValue::from_str(d)))
+}
+
+#[wasm_bindgen]
+pub async fn init() {
+    std::panic::set_hook(Box::new(|panic_info| {
+        if let Some(s) = panic_info.payload().downcast_ref::<&str>() {
+            if let Some(location) = panic_info.location() {
+                error!("mantalon panicked at {}:{}, {s}", location.file(), location.line());
+            } else {
+                error!("mantalon panicked, {s}");
+            }
+        } else if let Some(s) = panic_info.payload().downcast_ref::<String>() {
+            if let Some(location) = panic_info.location() {
+                error!("mantalon panicked at {}:{}, {s}", location.file(), location.line());
+            } else {
+                error!("mantalon panicked, {s}");
+            }
+        } else {
+            error!("panic occurred");
+        }
+    }));
+
+    update_manifest().await.expect("Error updating manifest");
+
+    debug!("Proxy library ready. Proxying {}", MANIFEST.domains.join(", "));
+}

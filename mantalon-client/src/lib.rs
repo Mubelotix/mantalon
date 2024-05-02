@@ -75,28 +75,3 @@ pub async fn proxied_fetch(request: http::Request<Empty<Bytes>>) -> Result<http:
     
     Ok(response)
 }
-
-#[wasm_bindgen(start)]
-pub async fn main() {
-    std::panic::set_hook(Box::new(|panic_info| {
-        if let Some(s) = panic_info.payload().downcast_ref::<&str>() {
-            if let Some(location) = panic_info.location() {
-                error!("mantalon panicked at {}:{}, {s}", location.file(), location.line());
-            } else {
-                error!("mantalon panicked, {s}");
-            }
-        } else if let Some(s) = panic_info.payload().downcast_ref::<String>() {
-            if let Some(location) = panic_info.location() {
-                error!("mantalon panicked at {}:{}, {s}", location.file(), location.line());
-            } else {
-                error!("mantalon panicked, {s}");
-            }
-        } else {
-            error!("panic occurred");
-        }
-    }));
-
-    update_manifest().await.expect("Error updating manifest");
-
-    debug!("Proxy library ready");
-}

@@ -8,22 +8,22 @@ use web_sys::{window, ServiceWorkerGlobalScope};
 
 #[derive(Default, Debug, Serialize, Deserialize)]
 pub struct MantalonManifest {
-    domains: Vec<String>,
-    landing_page: String,
-    https_only: bool,
-    rewrite_location: bool,
-    content_edits: Vec<ContentEdit>,    
+    pub domains: Vec<String>,
+    pub landing_page: String,
+    pub https_only: bool,
+    pub rewrite_location: bool,
+    pub content_edits: Vec<ContentEdit>,    
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ContentEdit {
-    matches: Vec<String>,
-    js: Option<String>,
-    css: Option<String>,
+    pub matches: Vec<String>,
+    pub js: Option<String>,
+    pub css: Option<String>,
     #[serde(default)]
-    add_headers: HashMap<String, String>,
+    pub add_headers: HashMap<String, String>,
     #[serde(default)]
-    insert_headers: HashMap<String, String>,
+    pub insert_headers: HashMap<String, String>,
 }
 
 #[derive(Debug)]

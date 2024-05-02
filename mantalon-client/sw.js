@@ -1,31 +1,41 @@
-// Create a wrapper function to wait until the proxiedFetch function is loaded
-async function proxiedFetchWrapper(request) {
-    while (!self.proxiedFetch) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-    }
-    return self.proxiedFetch(request);
-}
+var initialized = false;
 
-// Listen for fetch events
-self.addEventListener("fetch", (event) => {
-    let request = event.request;
+async function respond(request) {
+    // Directly fetch Mantalon resources
     let url = new URL(request.url);
     if (url.pathname.startsWith("/pkg/")
         || url.pathname.startsWith("/mantalon-connect/")
         || url.pathname === "/mantalon-connect"
         || url.pathname === "/sw.js") {
-        event.respondWith(fetch(event.request));
-        return;
+        return fetch(request);
     }
-    event.respondWith(proxiedFetchWrapper(event.request));
+
+    // Wait for Mantalon to initialize
+    while (!initialized) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    // Proxy requests on selected domains
+    if (url.hostname == self.location.hostname || self.proxiedDomains.includes(url.hostname)) {
+        return proxiedFetch(url, request);
+    } else {
+        return fetch(request);
+    }
+}
+
+// Listen for fetch events
+self.addEventListener("fetch", (event) => {
+    event.respondWith(respond(event.request)) // We need an inner function to be able to respond asynchronously
 });
 
 // Load Mantalon library
-import init, { proxiedFetch } from '/pkg/mantalon_client.js';
+import initWasm, { init, proxiedFetch, getProxiedDomains } from '/pkg/mantalon_client.js';
 async function run() {
+    await initWasm();
     await init();
-    
     self.proxiedFetch = proxiedFetch;
-    console.log("Initialized");
+    self.proxiedDomains = getProxiedDomains();
+    initialized = true;
+    console.log("Successfully initialized Mantalon. Proxying ", self.proxiedDomains);
 }
 run();
