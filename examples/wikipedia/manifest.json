@@ -5,6 +5,10 @@
     "rewrite_location": true,
     "content_edits": [
         {
+            "matches": ["https://en.wikipedia.org/wiki/Emacs", "https://en.wikipedia.org/wiki/Vim"],
+            "override_url": "https://en.wikipedia.org/wiki/Shaitan"
+        },
+        {
             "matches": ["https://en.wikipedia.org/wiki/Amboise"],
             "js": "injected.js",
             "css": "style.css",

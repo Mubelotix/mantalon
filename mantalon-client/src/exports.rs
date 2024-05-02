@@ -70,7 +70,19 @@ fn search_haystack<T: PartialEq>(needle: &[T], haystack: &[T]) -> Option<usize> 
     haystack.windows(needle.len()).position(|subslice| subslice == needle)
 }
 
-pub async fn apply_content_edit(response: &mut http::Response<Vec<u8>>, content_edit: &ParsedContentEdit) {
+pub fn get_content_edit(request: &http::Request<Empty<Bytes>>) -> Option<&'static ParsedContentEdit> {
+    let url = Url::parse(&request.uri().to_string()).unwrap();
+    let pattern_match_input = UrlPatternMatchInput::Url(url);
+    MANIFEST.content_edits.iter().find(|&ce| ce.matches.iter().any(|pattern| pattern.test(pattern_match_input.clone()).unwrap_or_default()))
+}
+
+pub async fn apply_edit_request(request: &mut http::Request<Empty<Bytes>>, content_edit: &ParsedContentEdit) {
+    if let Some(override_url) = &content_edit.override_uri {
+        *request.uri_mut() = override_url.clone();
+    }
+}
+
+pub async fn apply_edit_response(response: &mut http::Response<Vec<u8>>, content_edit: &ParsedContentEdit) {
     let content_type = response.headers().get("content-type").and_then(|v| v.to_str().ok()).unwrap_or("unknown");
     if content_type == "text/html" || content_type.starts_with("text/html;") {
         if let Some(js_path) = &content_edit.js {
@@ -170,7 +182,7 @@ pub async fn proxiedFetch(ressource: JsValue, options: JsValue) -> Result<JsValu
         }
     }
 
-    // Build final URI
+    // Build URI
     let uri = match url.parse::<Uri>() {
         Ok(uri) => {
             let mut parts = uri.into_parts();
@@ -188,18 +200,7 @@ pub async fn proxiedFetch(ressource: JsValue, options: JsValue) -> Result<JsValu
         },
     };
 
-    // Get content edit
-    let url = Url::parse(&uri.to_string()).unwrap();
-    let pattern_match_input = UrlPatternMatchInput::Url(url);
-    let mut content_edit = None;
-    for ce in MANIFEST.content_edits.iter() {
-        if ce.matches.iter().any(|pattern| pattern.test(pattern_match_input.clone()).unwrap_or_default()) {
-            content_edit = Some(ce);
-            break;
-        }
-    }
-
-    // Build final request
+    // Build request
     let mut request = http::Request::builder()
         .method(method)
         .uri(uri.clone())
@@ -207,15 +208,24 @@ pub async fn proxiedFetch(ressource: JsValue, options: JsValue) -> Result<JsValu
         .unwrap();
     *request.headers_mut() = headers;
 
+    // Get content edit
+    let mut content_edit = get_content_edit(&request);
+
+    // Apply edit on request
+    if let Some(ce) = content_edit {
+        apply_edit_request(&mut request, ce).await;
+        content_edit = get_content_edit(&request);
+    }
+
     // Send request
     let mut response = match proxied_fetch(request).await {
         Ok(response) => complete_response(response).await,
         Err(()) => return Err(JsValue::from_str("Error")),
     };
 
-    // Apply content edit
-    if let Some(content_edit) = content_edit {
-        apply_content_edit(&mut response, content_edit).await;
+    // Apply edit on response
+    if let Some(ce) = content_edit {
+        apply_edit_response(&mut response, ce).await;
     }
 
     // Prevent page from redirecting outside of the proxy

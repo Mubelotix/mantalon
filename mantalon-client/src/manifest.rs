@@ -1,5 +1,6 @@
 use std::{cell::UnsafeCell, collections::HashMap, ops::Deref};
 use crate::*;
+use http::{uri::InvalidUri, Uri};
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use url::Url;
@@ -53,7 +54,7 @@ pub struct ParsedContentEdit {
     pub matches: Vec<UrlPattern>,
     pub js: Option<String>,
     pub css: Option<String>,
-    pub override_url: Option<String>,
+    pub override_uri: Option<Uri>,
     pub substitute: Vec<Substitution>,
     pub add_headers: HashMap<String, String>,
     pub insert_headers: HashMap<String, String>,
@@ -70,6 +71,7 @@ pub enum UpdateManifestError {
     SerdeError(serde_wasm_bindgen::Error),
     MissingDomain,
     InvalidBaseDomain(url::ParseError),
+    InvalidOverrideUrl(InvalidUri),
 }
 
 impl std::fmt::Display for UpdateManifestError {
@@ -83,6 +85,7 @@ impl std::fmt::Display for UpdateManifestError {
             UpdateManifestError::SerdeError(e) => write!(f, "Error deserializing manifest: {:?}", e),
             UpdateManifestError::MissingDomain => write!(f, "Manifest must have at least one domain"),
             UpdateManifestError::InvalidBaseDomain(e) => write!(f, "Error parsing base url: {:?}", e),
+            UpdateManifestError::InvalidOverrideUrl(e) => write!(f, "Error parsing override url: {:?}", e),
         }
     }
 }
@@ -136,7 +139,7 @@ pub async fn update_manifest() -> Result<(), UpdateManifestError> {
             matches,
             js: edit.js,
             css: edit.css,
-            override_url: edit.override_url,
+            override_uri: edit.override_url.map(Uri::try_from).transpose().map_err(UpdateManifestError::InvalidOverrideUrl)?,
             substitute: edit.substitute,
             add_headers: edit.add_headers,
             insert_headers: edit.insert_headers,
