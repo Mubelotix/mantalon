@@ -78,7 +78,7 @@ pub fn get_content_edit(request: &http::Request<Empty<Bytes>>) -> Option<&'stati
 
 pub async fn apply_edit_request(request: &mut http::Request<Empty<Bytes>>, content_edit: &ParsedContentEdit) {
     if let Some(override_url) = &content_edit.override_uri {
-        *request.uri_mut() = override_url.clone();
+        *request.uri_mut() = override_url.clone(); // FIXME: we might not need to proxy this then
     }
 }
 
@@ -92,7 +92,7 @@ pub async fn apply_edit_response(response: &mut http::Response<Vec<u8>>, content
                 response.body_mut().truncate(len - 7);
                 response.body_mut().extend_from_slice(format!("<script src=\"/pkg/config/{js_path}\"></script></html>").as_bytes());
             } else {
-                error!("Parse DOM")
+                error!("Parse DOM") // TODO: Parse DOM
             }
         }
     
@@ -103,7 +103,7 @@ pub async fn apply_edit_response(response: &mut http::Response<Vec<u8>>, content
                 if search_haystack(b"</head>", &response.body()[idx+7..]).is_none() {
                     response.body_mut().splice(idx..idx+7, format!("<link rel=\"stylesheet\" href=\"/pkg/config/{css_path}\">").into_bytes().into_iter());
                 } else {
-                    error!("Parse DOM (css)")
+                    error!("Parse DOM (css)") // TODO: Parse DOM
                 }
             }
         }
