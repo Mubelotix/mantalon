@@ -1,7 +1,7 @@
 #![allow(non_snake_case)]
 
 use crate::*;
-use http::{HeaderName, HeaderValue, Method, Uri};
+use http::{uri::Parts, HeaderName, HeaderValue, Method, Uri};
 use js_sys::{Array, Function, Iterator, Map, Reflect::*};
 use url::Url;
 use urlpattern::UrlPatternMatchInput;
@@ -85,7 +85,7 @@ pub async fn apply_edit_request(request: &mut http::Request<Empty<Bytes>>, conte
 pub async fn apply_edit_response(response: &mut http::Response<Vec<u8>>, content_edit: &ParsedContentEdit) {
     let content_type = response.headers().get("content-type").and_then(|v| v.to_str().ok()).unwrap_or("unknown");
     if content_type == "text/html" || content_type.starts_with("text/html;") {
-        if let Some(js_path) = &content_edit.js {
+        for js_path in &content_edit.js {
             // Only replace when the closing html tag is at the end (easy case)
             if response.body().ends_with(b"</html>") {
                 let len = response.body().len();
@@ -96,7 +96,7 @@ pub async fn apply_edit_response(response: &mut http::Response<Vec<u8>>, content
             }
         }
     
-        if let Some(css_path) = &content_edit.css {
+        for css_path in &content_edit.css {
             // Only replace when only one closing head tag is present.
             // Otherwise we don't know which is the right and which might be some XSS attack.
             if let Some(idx) = search_haystack(b"</head>", response.body()) {
@@ -105,6 +105,19 @@ pub async fn apply_edit_response(response: &mut http::Response<Vec<u8>>, content
                 } else {
                     error!("Parse DOM (css)") // TODO: Parse DOM
                 }
+            }
+        }
+
+        if content_edit.lock_browsing {
+            // TODO: remove duplicated code
+            if response.body().ends_with(b"</html>") {
+                let len = response.body().len();
+                response.body_mut().truncate(len - 7); 
+                let code = include_str!("../scripts/lock_browsing.js");
+                let code = code.replace("proxiedDomains", &MANIFEST.domains.iter().map(|d| format!("\"{d}\"")).collect::<Vec<_>>().join(","));
+                response.body_mut().extend_from_slice(format!("<script>{code}</script></html>").as_bytes());
+            } else {
+                error!("Parse DOM (lock)") // TODO: Parse DOM
             }
         }
     }
@@ -227,14 +240,15 @@ pub async fn proxiedFetch(ressource: JsValue, options: JsValue) -> Result<JsValu
 
     // Prevent page from redirecting outside of the proxy
     if let Some(location) = response.headers().get("location").and_then(|l| l.to_str().ok()).and_then(|l| l.parse::<Uri>().ok()) {
-        let mut parts = location.into_parts();
-        if let Some(mut authority) = parts.authority {
+        if let Some(authority) = location.authority() {
             if MANIFEST.domains.iter().any(|d| authority.host() == d) { // TODO: use authority instead of host
+                let mut parts = Parts::default();
                 parts.scheme = Some(http::uri::Scheme::HTTP);
-                authority = "localhost:8000".parse().unwrap(); // TODO: Unhardcode
-                parts.authority = Some(authority);
+                parts.authority = Some("localhost:8000".parse().unwrap()); // TODO: Unhardcode
+                parts.path_and_query = location.path_and_query().cloned();
                 let uri = Uri::from_parts(parts).unwrap();
                 response.headers_mut().insert("location", uri.to_string().parse().unwrap());
+                response.headers_mut().insert("x-mantalon-location", location.to_string().parse().unwrap());
             }
         }
     }

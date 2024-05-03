@@ -1,11 +1,12 @@
 {
-    "domains": ["en.wikipedia.org"],
+    "domains": ["en.wikipedia.org", "fr.wikipedia.org"],
     "landing_page": "landing.html",
+    "lock_browsing": true,
     "https_only": true,
     "rewrite_location": true,
     "content_edits": [
         {
-            "matches": ["https://en.wikipedia.org/wiki/Emacs", "https://en.wikipedia.org/wiki/Vim"],
+            "matches": ["https://*.wikipedia.org/wiki/Emacs", "https://*.wikipedia.org/wiki/Vim"],
             "override_url": "https://en.wikipedia.org/wiki/Shaitan"
         },
         {
@@ -25,7 +26,7 @@
             }
         },
         {
-            "matches": ["https://en.wikipedia.org/wiki/*"],
+            "matches": ["https://*.wikipedia.org/wiki/*"],
             "js": "injected.js",
             "css": "pink-theme.css"
         }

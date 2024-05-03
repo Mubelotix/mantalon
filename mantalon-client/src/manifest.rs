@@ -1,6 +1,6 @@
 use std::{cell::UnsafeCell, collections::HashMap, ops::Deref};
 use crate::*;
-use http::{uri::{Authority, InvalidUri}, Uri};
+use http::{uri::InvalidUri, Uri};
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use url::Url;
@@ -13,6 +13,7 @@ use web_sys::{window, ServiceWorkerGlobalScope};
 pub struct Manifest {
     pub domains: Vec<String>,
     pub landing_page: String,
+    pub lock_browsing: Option<bool>,
     pub https_only: bool,
     pub rewrite_location: bool,
     pub content_edits: Vec<ContentEdit>,    
@@ -21,8 +22,9 @@ pub struct Manifest {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ContentEdit {
     pub matches: Vec<String>,
-    pub js: Option<String>,
-    pub css: Option<String>,
+    pub lock_browsing: Option<bool>,
+    pub js: Option<FileInsertion>,
+    pub css: Option<FileInsertion>,
     pub override_url: Option<String>,
     #[serde(default)]
     pub substitute: Vec<Substitution>,
@@ -40,11 +42,27 @@ pub struct Substitution {
     pub max_replacements: Option<usize>,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum FileInsertion {
+    File(String),
+    Files(Vec<String>),
+}
+
+impl From<FileInsertion> for Vec<String> {
+    fn from(fi: FileInsertion) -> Vec<String> {
+        match fi {
+            FileInsertion::File(f) => vec![f],
+            FileInsertion::Files(f) => f,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct ParsedManifest {
-    pub base_authority: Authority,
     pub domains: Vec<String>,
     pub landing_page: String,
+    pub lock_browsing: bool,
     pub https_only: bool,
     pub rewrite_location: bool,
     pub content_edits: Vec<ParsedContentEdit>,
@@ -53,8 +71,9 @@ pub struct ParsedManifest {
 #[derive(Debug)]
 pub struct ParsedContentEdit {
     pub matches: Vec<UrlPattern>,
-    pub js: Option<String>,
-    pub css: Option<String>,
+    pub lock_browsing: bool,
+    pub js: Vec<String>,
+    pub css: Vec<String>,
     pub override_uri: Option<Uri>,
     pub substitute: Vec<Substitution>,
     pub add_headers: HashMap<String, String>,
@@ -71,7 +90,6 @@ pub enum UpdateManifestError {
     JsonError2(JsValue),
     SerdeError(serde_wasm_bindgen::Error),
     MissingDomain,
-    InvalidBaseAuthority(InvalidUri),
     InvalidBaseUrl(url::ParseError),
     InvalidOverrideUrl(InvalidUri),
 }
@@ -86,7 +104,6 @@ impl std::fmt::Display for UpdateManifestError {
             UpdateManifestError::JsonError2(e) => write!(f, "Error parsing JSON: {:?}", e),
             UpdateManifestError::SerdeError(e) => write!(f, "Error deserializing manifest: {:?}", e),
             UpdateManifestError::MissingDomain => write!(f, "Manifest must have at least one domain"),
-            UpdateManifestError::InvalidBaseAuthority(e) => write!(f, "Error parsing base authority: {:?}", e),
             UpdateManifestError::InvalidBaseUrl(e) => write!(f, "Error parsing base url: {:?}", e),
             UpdateManifestError::InvalidOverrideUrl(e) => write!(f, "Error parsing override url: {:?}", e),
         }
@@ -108,15 +125,15 @@ pub async fn update_manifest() -> Result<(), UpdateManifestError> {
     let manifest = serde_wasm_bindgen::from_value::<Manifest>(json).map_err(UpdateManifestError::SerdeError)?;
 
     // Process some parts of the manifest
-    let base_domain = manifest.domains.first().ok_or(UpdateManifestError::MissingDomain)?.clone();
     let mut parsed_manifest = ParsedManifest {
-        base_authority: Authority::try_from(base_domain.as_str()).map_err(UpdateManifestError::InvalidBaseAuthority)?,
         domains: manifest.domains,
         landing_page: manifest.landing_page,
+        lock_browsing: manifest.lock_browsing.unwrap_or(false),
         https_only: manifest.https_only,
         rewrite_location: manifest.rewrite_location,
         content_edits: Vec::new(),
     };
+    let base_domain = parsed_manifest.domains.first().ok_or(UpdateManifestError::MissingDomain)?.clone();
     let base_url = format!("https://{}/", base_domain);
     let base_url = Url::parse(&base_url).map_err(UpdateManifestError::InvalidBaseUrl)?;
     for edit in manifest.content_edits {
@@ -141,8 +158,9 @@ pub async fn update_manifest() -> Result<(), UpdateManifestError> {
 
         let parsed_edit = ParsedContentEdit {
             matches,
-            js: edit.js,
-            css: edit.css,
+            lock_browsing: edit.lock_browsing.unwrap_or(parsed_manifest.lock_browsing),
+            js: edit.js.map(FileInsertion::into).unwrap_or_default(),
+            css: edit.css.map(FileInsertion::into).unwrap_or_default(),
             override_uri: edit.override_url.map(Uri::try_from).transpose().map_err(UpdateManifestError::InvalidOverrideUrl)?,
             substitute: edit.substitute,
             add_headers: edit.add_headers,
@@ -165,8 +183,8 @@ unsafe impl Send for StaticManifest {} // Wasm is singlethreaded
 impl Default for StaticManifest {
     fn default() -> Self {
         StaticManifest(UnsafeCell::new(ParsedManifest {
-            base_authority: Authority::from_static("localhost"),
             domains: vec!["localhost".to_string()],
+            lock_browsing: false,
             landing_page: "/".to_string(),
             https_only: false,
             rewrite_location: false,
