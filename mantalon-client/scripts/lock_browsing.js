@@ -8,3 +8,5 @@ document.addEventListener("click", function (e) {
         }
     }
 }, true);
+
+// TODO: Lock browsing on forms
