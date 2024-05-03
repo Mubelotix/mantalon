@@ -127,13 +127,17 @@ pub async fn apply_edit_response(response: &mut http::Response<Vec<u8>>, content
 }
 
 /// Tries to replicate [fetch](https://developer.mozilla.org/en-US/docs/Web/API/fetch)
+/// 
+/// Difference: when you set options to a string, it will override the URL.
 #[wasm_bindgen]
 pub async fn proxiedFetch(ressource: JsValue, options: JsValue) -> Result<JsValue, JsValue> {
     // Read options
     let mut headers = http::HeaderMap::<http::HeaderValue>::new();
     let mut method = Method::GET;
     let mut url = String::new();
-    if let Ok(options) = options.dyn_into::<Map>() {
+    if let Some(options) = options.as_string() {
+        url = options;
+    } else if let Ok(options) = options.dyn_into::<Map>() {
         for entry in options.entries().into_iter().filter_map(|e| e.ok()).filter_map(|e| e.dyn_into::<Array>().ok()) {
             let Some(key) = entry.get(0).as_string() else {
                 error!("Invalid key in options");
@@ -166,7 +170,9 @@ pub async fn proxiedFetch(ressource: JsValue, options: JsValue) -> Result<JsValu
         match ressource.dyn_into::<Request>() {
             Ok(request) => {
                 method = from_method(request.method().into());
-                url = request.url();
+                if url.is_empty() {
+                    url = request.url();
+                }
                 headers = from_headers(request.headers().into());
                 // TODO body
             },
@@ -184,16 +190,7 @@ pub async fn proxiedFetch(ressource: JsValue, options: JsValue) -> Result<JsValu
 
     // Build URI
     let uri = match url.parse::<Uri>() {
-        Ok(uri) => {
-            let mut parts = uri.into_parts();
-            if let Some(authority) = &mut parts.authority {
-                if authority.host() == "127.0.0.1" || authority.host() == "localhost" {
-                    *authority = MANIFEST.base_authority.clone();
-                    parts.scheme = Some("https".parse().unwrap());
-                }
-            }
-            Uri::from_parts(parts).unwrap()
-        },
+        Ok(uri) => uri,
         Err(e) => {
             error!("Invalid URL: {}", e);
             return Err(JsValue::from_str("Invalid URL"));

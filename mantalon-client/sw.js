@@ -16,8 +16,13 @@ async function respond(request) {
     }
 
     // Proxy requests on selected domains
-    if (url.hostname == self.location.hostname || self.proxiedDomains.includes(url.hostname)) {
-        return proxiedFetch(url, request);
+    if (self.proxiedDomains.includes(url.hostname)) {
+        return proxiedFetch(request);
+    } else if (url.hostname == self.location.hostname) {
+        url.protocol = "https"; // TODO support http proxied sites
+        url.hostname = self.proxiedDomains[0];
+        url.port = ""; // TODO support proxied sites with port
+        return proxiedFetch(request, url.href);
     } else {
         return fetch(request);
     }
