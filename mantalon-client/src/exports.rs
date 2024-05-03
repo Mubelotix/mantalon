@@ -80,6 +80,12 @@ pub async fn apply_edit_request(request: &mut http::Request<Empty<Bytes>>, conte
     if let Some(override_url) = &content_edit.override_uri {
         *request.uri_mut() = override_url.clone(); // FIXME: we might not need to proxy this then
     }
+    for header in &content_edit.insert_request_headers {
+        request.headers_mut().insert(header.0.clone(), header.1.clone());
+    }
+    for header in &content_edit.append_request_headers {
+        request.headers_mut().append(header.0.clone(), header.1.clone());
+    }
 }
 
 pub async fn apply_edit_response(response: &mut http::Response<Vec<u8>>, content_edit: &ParsedContentEdit) {
@@ -136,6 +142,13 @@ pub async fn apply_edit_response(response: &mut http::Response<Vec<u8>>, content
                 break;
             }
         }
+    }
+
+    for header in &content_edit.insert_headers {
+        response.headers_mut().insert(header.0.clone(), header.1.clone());
+    }
+    for header in &content_edit.append_headers {
+        response.headers_mut().append(header.0.clone(), header.1.clone());
     }
 }
 
@@ -225,6 +238,13 @@ pub async fn proxiedFetch(ressource: JsValue, options: JsValue) -> Result<JsValu
     if let Some(ce) = content_edit {
         apply_edit_request(&mut request, ce).await;
         content_edit = get_content_edit(&request);
+    }
+
+    // Add host header
+    if let Some(authority) = uri.authority() {
+        if let Ok(host) = authority.host().parse() {
+            request.headers_mut().insert("host", host);
+        }
     }
 
     // Send request

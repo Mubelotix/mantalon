@@ -1,6 +1,6 @@
 use std::{cell::UnsafeCell, collections::HashMap, ops::Deref};
 use crate::*;
-use http::{uri::InvalidUri, Uri};
+use http::{uri::InvalidUri, HeaderName, HeaderValue, Uri};
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use url::Url;
@@ -29,9 +29,13 @@ pub struct ContentEdit {
     #[serde(default)]
     pub substitute: Vec<Substitution>,
     #[serde(default)]
-    pub add_headers: HashMap<String, String>,
+    pub append_headers: HashMap<String, String>,
     #[serde(default)]
     pub insert_headers: HashMap<String, String>,
+    #[serde(default)]
+    pub append_request_headers: HashMap<String, String>,
+    #[serde(default)]
+    pub insert_request_headers: HashMap<String, String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -76,8 +80,10 @@ pub struct ParsedContentEdit {
     pub css: Vec<String>,
     pub override_uri: Option<Uri>,
     pub substitute: Vec<Substitution>,
-    pub add_headers: HashMap<String, String>,
-    pub insert_headers: HashMap<String, String>,
+    pub append_headers: HashMap<HeaderName, HeaderValue>,
+    pub insert_headers: HashMap<HeaderName, HeaderValue>,
+    pub append_request_headers: HashMap<HeaderName, HeaderValue>,
+    pub insert_request_headers: HashMap<HeaderName, HeaderValue>,
 }
 
 #[derive(Debug)]
@@ -111,6 +117,29 @@ impl std::fmt::Display for UpdateManifestError {
 }
 
 impl std::error::Error for UpdateManifestError {}
+
+#[allow(clippy::mutable_key_type)]
+fn parse_headers(headers: HashMap<String, String>) -> HashMap<HeaderName, HeaderValue> {
+    let mut parsed_headers = HashMap::new();
+    for (k, v) in headers {
+        let k = match HeaderName::from_bytes(k.as_bytes()) {
+            Ok(k) => k,
+            Err(e) => {
+                error!("Invalid header name {k:?}: {:?}", e);
+                continue;
+            }
+        };
+        let v = match HeaderValue::from_bytes(v.as_bytes()) {
+            Ok(v) => v,
+            Err(e) => {
+                error!("Invalid header value {v:?}: {:?}", e);
+                continue;
+            }
+        };
+        parsed_headers.insert(k, v);
+    }
+    parsed_headers
+}
 
 pub async fn update_manifest() -> Result<(), UpdateManifestError> {
     let promise = window().map(|w| w.fetch_with_str("/pkg/config/manifest.json"))
@@ -163,8 +192,10 @@ pub async fn update_manifest() -> Result<(), UpdateManifestError> {
             css: edit.css.map(FileInsertion::into).unwrap_or_default(),
             override_uri: edit.override_url.map(Uri::try_from).transpose().map_err(UpdateManifestError::InvalidOverrideUrl)?,
             substitute: edit.substitute,
-            add_headers: edit.add_headers,
-            insert_headers: edit.insert_headers,
+            append_headers: parse_headers(edit.append_headers),
+            insert_headers: parse_headers(edit.insert_headers),
+            append_request_headers: parse_headers(edit.append_request_headers),
+            insert_request_headers: parse_headers(edit.insert_request_headers),
         };
 
         parsed_manifest.content_edits.push(parsed_edit);

@@ -1,0 +1,24 @@
+{
+    "domains": ["cas.insa-rouen.fr"],
+    "landing_page": "",
+    "lock_browsing": true,
+    "https_only": true,
+    "rewrite_location": true,
+    "content_edits": [
+        {
+            "matches": ["*"],
+            "insert_request_headers": {
+                "Sec-Fetch-Dest": "document",
+                "Sec-Fetch-Mode": "navigate",
+                "Sec-Fetch-Site": "none",
+                "Sec-Fetch-User": "?1",
+                "Sec-GPC": "1",
+                "Pragma": "no-cache",
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "Upgrade-Insecure-Requests": "1",
+                "Accept-Language": "en-US,en;q=0.6"
+            }
+        }
+    ]
+}
