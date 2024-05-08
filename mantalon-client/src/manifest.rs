@@ -12,17 +12,18 @@ use web_sys::{window, ServiceWorkerGlobalScope};
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Manifest {
     pub domains: Vec<String>,
-    pub landing_page: String,
     pub lock_browsing: Option<bool>,
-    pub https_only: bool,
-    pub rewrite_location: bool,
-    pub content_edits: Vec<ContentEdit>,    
+    pub https_only: Option<bool>,
+    pub rewrite_location: Option<bool>,
+    pub content_edits: Vec<ContentEdit>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct ContentEdit {
     pub matches: Vec<String>,
     pub lock_browsing: Option<bool>,
+    pub https_only: Option<bool>,
+    pub rewrite_location: Option<bool>,
     pub js: Option<FileInsertion>,
     pub css: Option<FileInsertion>,
     pub override_url: Option<String>,
@@ -65,7 +66,6 @@ impl From<FileInsertion> for Vec<String> {
 #[derive(Debug)]
 pub struct ParsedManifest {
     pub domains: Vec<String>,
-    pub landing_page: String,
     pub lock_browsing: bool,
     pub https_only: bool,
     pub rewrite_location: bool,
@@ -76,6 +76,8 @@ pub struct ParsedManifest {
 pub struct ParsedContentEdit {
     pub matches: Vec<UrlPattern>,
     pub lock_browsing: bool,
+    pub https_only: bool,
+    pub rewrite_location: bool,
     pub js: Vec<String>,
     pub css: Vec<String>,
     pub override_uri: Option<Uri>,
@@ -151,15 +153,18 @@ pub async fn update_manifest() -> Result<(), UpdateManifestError> {
     let json_promise = response.json().map_err(UpdateManifestError::JsonError)?;
     let json_future = JsFuture::from(json_promise);
     let json = json_future.await.map_err(UpdateManifestError::JsonError2)?;
-    let manifest = serde_wasm_bindgen::from_value::<Manifest>(json).map_err(UpdateManifestError::SerdeError)?;
+    let mut manifest = serde_wasm_bindgen::from_value::<Manifest>(json).map_err(UpdateManifestError::SerdeError)?;
+    manifest.content_edits.push(ContentEdit { // Add a wildcard rule to apply root settings to all remaining pages
+        matches: vec![String::from("*")],
+        ..Default::default()
+    });
 
     // Process some parts of the manifest
     let mut parsed_manifest = ParsedManifest {
         domains: manifest.domains,
-        landing_page: manifest.landing_page,
         lock_browsing: manifest.lock_browsing.unwrap_or(false),
-        https_only: manifest.https_only,
-        rewrite_location: manifest.rewrite_location,
+        https_only: manifest.https_only.unwrap_or(false),
+        rewrite_location: manifest.rewrite_location.unwrap_or(true),
         content_edits: Vec::new(),
     };
     let base_domain = parsed_manifest.domains.first().ok_or(UpdateManifestError::MissingDomain)?.clone();
@@ -188,6 +193,8 @@ pub async fn update_manifest() -> Result<(), UpdateManifestError> {
         let parsed_edit = ParsedContentEdit {
             matches,
             lock_browsing: edit.lock_browsing.unwrap_or(parsed_manifest.lock_browsing),
+            https_only: edit.https_only.unwrap_or(parsed_manifest.https_only),
+            rewrite_location: edit.rewrite_location.unwrap_or(parsed_manifest.rewrite_location),
             js: edit.js.map(FileInsertion::into).unwrap_or_default(),
             css: edit.css.map(FileInsertion::into).unwrap_or_default(),
             override_uri: edit.override_url.map(Uri::try_from).transpose().map_err(UpdateManifestError::InvalidOverrideUrl)?,
@@ -216,9 +223,8 @@ impl Default for StaticManifest {
         StaticManifest(UnsafeCell::new(ParsedManifest {
             domains: vec!["localhost".to_string()],
             lock_browsing: false,
-            landing_page: "/".to_string(),
             https_only: false,
-            rewrite_location: false,
+            rewrite_location: true,
             content_edits: Vec::new(),
         }))
     }

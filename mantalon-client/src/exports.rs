@@ -80,6 +80,11 @@ pub async fn apply_edit_request(request: &mut http::Request<Empty<Bytes>>, conte
     if let Some(override_url) = &content_edit.override_uri {
         *request.uri_mut() = override_url.clone(); // FIXME: we might not need to proxy this then
     }
+    if content_edit.https_only && request.uri().scheme_str() != Some("https") {
+        let mut parts = request.uri().clone().into_parts();
+        parts.scheme = Some(http::uri::Scheme::HTTPS);
+        *request.uri_mut() = Uri::from_parts(parts).unwrap();
+    }
     for header in &content_edit.insert_request_headers {
         request.headers_mut().insert(header.0.clone(), header.1.clone());
     }
@@ -89,6 +94,23 @@ pub async fn apply_edit_request(request: &mut http::Request<Empty<Bytes>>, conte
 }
 
 pub async fn apply_edit_response(response: &mut http::Response<Vec<u8>>, content_edit: &ParsedContentEdit) {
+    if content_edit.rewrite_location {
+        // Prevent page from redirecting outside of the proxy
+        if let Some(location) = response.headers().get("location").and_then(|l| l.to_str().ok()).and_then(|l| l.parse::<Uri>().ok()) {
+            if let Some(authority) = location.authority() {
+                if MANIFEST.domains.iter().any(|d| authority.host() == d) { // TODO: use authority instead of host
+                    let mut parts = Parts::default();
+                    parts.scheme = Some(http::uri::Scheme::HTTP);
+                    parts.authority = Some("localhost:8000".parse().unwrap()); // TODO: Unhardcode
+                    parts.path_and_query = location.path_and_query().cloned();
+                    let uri = Uri::from_parts(parts).unwrap();
+                    response.headers_mut().insert("location", uri.to_string().parse().unwrap());
+                    response.headers_mut().insert("x-mantalon-location", location.to_string().parse().unwrap());
+                }
+            }
+        }
+    }
+
     let content_type = response.headers().get("content-type").and_then(|v| v.to_str().ok()).unwrap_or("unknown");
     if content_type == "text/html" || content_type.starts_with("text/html;") {
         for js_path in &content_edit.js {
@@ -256,21 +278,6 @@ pub async fn proxiedFetch(ressource: JsValue, options: JsValue) -> Result<JsValu
     // Apply edit on response
     if let Some(ce) = content_edit {
         apply_edit_response(&mut response, ce).await;
-    }
-
-    // Prevent page from redirecting outside of the proxy
-    if let Some(location) = response.headers().get("location").and_then(|l| l.to_str().ok()).and_then(|l| l.parse::<Uri>().ok()) {
-        if let Some(authority) = location.authority() {
-            if MANIFEST.domains.iter().any(|d| authority.host() == d) { // TODO: use authority instead of host
-                let mut parts = Parts::default();
-                parts.scheme = Some(http::uri::Scheme::HTTP);
-                parts.authority = Some("localhost:8000".parse().unwrap()); // TODO: Unhardcode
-                parts.path_and_query = location.path_and_query().cloned();
-                let uri = Uri::from_parts(parts).unwrap();
-                response.headers_mut().insert("location", uri.to_string().parse().unwrap());
-                response.headers_mut().insert("x-mantalon-location", location.to_string().parse().unwrap());
-            }
-        }
     }
 
     // Convert response to JS
