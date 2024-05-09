@@ -1,0 +1,24 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build with Trunk",
+            "command": "sh",
+            "args": [
+                "-c",
+                "cd mantalon-client && wasm-pack build --target=web --dev"
+            ],
+            "type": "shell",
+            "problemMatcher": [],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "presentation": {
+                "reveal": "always",
+                "close": true,
+                "clear": true
+            }
+        }
+    ]
+}
