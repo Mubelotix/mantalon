@@ -1,6 +1,7 @@
 {
     "domains": ["app.dev.insaplace.me", "www.google.com", "www.gstatic.com"],
     "lock_browsing": true,
+    "https_only": true,
     "content_edits": [
         {
             "matches": ["https://www.google.com/recaptcha/api.js"],
