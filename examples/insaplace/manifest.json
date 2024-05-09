@@ -39,6 +39,19 @@
                     "max_replacements": 1
                 }
             ]
+        },
+        {
+            "matches": ["https://www.google.com/recaptcha/api2/webworker.js?*"],
+            "substitute": [
+                {
+                    "pattern": "https://www.gstatic.com/",
+                    "replacement": "http://localhost:8000/"
+                },
+                {
+                    "pattern": "recaptcha__en.js",
+                    "replacement": "recaptcha__en.js?mantalon-protocol=https%3A&mantalon-host=www.gstatic.com"
+                }
+            ]
         }
     ]
 }
