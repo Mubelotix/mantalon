@@ -8,6 +8,10 @@ async function respond(request, clientId, replacesClientId) {
     let mantalonProtocol = url_params.get("mantalon-protocol");
     let mantalonHost = url_params.get("mantalon-host");
     let mantalonNavigate = url_params.get("mantalon-navigate");
+    url_params.delete("mantalon-protocol");
+    url_params.delete("mantalon-host");
+    url_params.delete("mantalon-navigate");
+    url.search = url_params.toString();
     if (url.pathname.startsWith("/pkg/")
         || url.pathname.startsWith("/mantalon-connect/")
         || url.pathname === "/mantalon-connect"

@@ -58,7 +58,7 @@ pub async fn read_body(mut body: Incoming) -> Option<Vec<u8>> {
                 return None;
             },
             None => {
-                log!("Unexpected end of stream");
+                debug!("Unexpected end of stream");
                 break;
             }
         }
