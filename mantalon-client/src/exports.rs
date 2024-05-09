@@ -70,10 +70,28 @@ fn search_haystack<T: PartialEq>(needle: &[T], haystack: &[T]) -> Option<usize> 
     haystack.windows(needle.len()).position(|subslice| subslice == needle)
 }
 
-pub fn get_content_edit(request: &http::Request<Empty<Bytes>>) -> Option<&'static ParsedContentEdit> {
+fn replace_in_vec(data: &mut Vec<u8>, pattern: &String, replacement: &String, max_replacements: usize) {
+    let mut idx_start = 0;
+    let mut i = 0;
+    while let Some(idx) = search_haystack(pattern.as_bytes(), &data[idx_start..]) {
+        data.splice(idx_start+idx..idx_start+idx+pattern.len(), replacement.as_bytes().iter().copied());
+        idx_start += idx + replacement.len();
+        i += 1;
+        if i >= max_replacements {
+            break;
+        }
+    }
+}
+
+pub fn get_content_edit(request: &http::Request<Empty<Bytes>>) -> (usize, &'static ParsedContentEdit) {
     let url = Url::parse(&request.uri().to_string()).unwrap();
     let pattern_match_input = UrlPatternMatchInput::Url(url);
-    MANIFEST.content_edits.iter().find(|&ce| ce.matches.iter().any(|pattern| pattern.test(pattern_match_input.clone()).unwrap_or_default()))
+    MANIFEST.content_edits
+        .iter()
+        .enumerate()
+        .find(|(_, ref ce)| ce.matches.iter().any(|pattern| pattern.test(pattern_match_input.clone())
+        .unwrap_or_default()))
+        .unwrap() // There is always a wildcard match
 }
 
 pub async fn apply_edit_request(request: &mut http::Request<Empty<Bytes>>, content_edit: &ParsedContentEdit) {
@@ -85,6 +103,9 @@ pub async fn apply_edit_request(request: &mut http::Request<Empty<Bytes>>, conte
         parts.scheme = Some(http::uri::Scheme::HTTPS);
         *request.uri_mut() = Uri::from_parts(parts).unwrap();
     }
+    for header in &content_edit.remove_request_headers {
+        request.headers_mut().remove(header);
+    }
     for header in &content_edit.insert_request_headers {
         request.headers_mut().insert(header.0.clone(), header.1.clone());
     }
@@ -94,8 +115,8 @@ pub async fn apply_edit_request(request: &mut http::Request<Empty<Bytes>>, conte
 }
 
 pub async fn apply_edit_response(response: &mut http::Response<Vec<u8>>, content_edit: &ParsedContentEdit) {
+    // Prevent page from redirecting outside of the proxy
     if content_edit.rewrite_location {
-        // Prevent page from redirecting outside of the proxy
         if let Some(location) = response.headers().get("location").and_then(|l| l.to_str().ok()).and_then(|l| l.parse::<Uri>().ok()) {
             if let Some(authority) = location.authority() {
                 if MANIFEST.domains.iter().any(|d| authority.host() == d) { // TODO: use authority instead of host
@@ -144,6 +165,12 @@ pub async fn apply_edit_response(response: &mut http::Response<Vec<u8>>, content
                 let code = include_str!("../scripts/lock_browsing.js");
                 let code = code.replace("proxiedDomains", &MANIFEST.domains.iter().map(|d| format!("\"{d}\"")).collect::<Vec<_>>().join(","));
                 response.body_mut().extend_from_slice(format!("<script>{code}</script></html>").as_bytes());
+            } else if response.body().ends_with(b"</html>\n") {
+                let len = response.body().len();
+                response.body_mut().truncate(len - 8); 
+                let code = include_str!("../scripts/lock_browsing.js");
+                let code = code.replace("proxiedDomains", &MANIFEST.domains.iter().map(|d| format!("\"{d}\"")).collect::<Vec<_>>().join(","));
+                response.body_mut().extend_from_slice(format!("<script>{code}</script></html>\n").as_bytes());
             } else {
                 error!("Parse DOM (lock)") // TODO: Parse DOM
             }
@@ -152,20 +179,30 @@ pub async fn apply_edit_response(response: &mut http::Response<Vec<u8>>, content
     
     for substitution in &content_edit.substitute {
         let pattern = &substitution.pattern;
-        let replacement = &substitution.replacement;
-        let max_replacements = substitution.max_replacements.unwrap_or(usize::MAX);
-        let mut idx_start = 0;
-        let mut i = 0;
-        while let Some(idx) = search_haystack(pattern.as_bytes(), &response.body()[idx_start..]) {
-            response.body_mut().splice(idx..idx+pattern.len(), replacement.clone().into_bytes().into_iter());
-            idx_start += idx + replacement.len();
-            i += 1;
-            if i >= max_replacements {
-                break;
+        let replacement = match &substitution.replacement {
+            Some(replacement) => replacement.clone(),
+            None => {
+                let replacement_file = substitution.replacement_file.clone().unwrap(); // TODO ensure existence
+                let replacement_url = format!("pkg/config/{replacement_file}");
+                let promise = window().map(|w| w.fetch_with_str(&replacement_url))
+                    .or_else(|| js_sys::global().dyn_into::<ServiceWorkerGlobalScope>().ok().map(|sw| sw.fetch_with_str(&replacement_url)))
+                    .unwrap();
+                let future = JsFuture::from(promise);
+                let response = future.await.unwrap();
+                let response = response.dyn_into::<web_sys::Response>().unwrap();
+                let promise = response.text().unwrap();
+                let future = JsFuture::from(promise);
+                let text = future.await.unwrap();
+                text.as_string().unwrap()
             }
-        }
+        };
+        let max_replacements = substitution.max_replacements.unwrap_or(usize::MAX);
+        replace_in_vec(response.body_mut(), pattern, &replacement, max_replacements);
     }
 
+    for header in &content_edit.remove_headers {
+        response.headers_mut().remove(header);
+    }
     for header in &content_edit.insert_headers {
         response.headers_mut().insert(header.0.clone(), header.1.clone());
     }
@@ -254,13 +291,12 @@ pub async fn proxiedFetch(ressource: JsValue, options: JsValue) -> Result<JsValu
     *request.headers_mut() = headers;
 
     // Get content edit
-    let mut content_edit = get_content_edit(&request);
+    let (i, mut content_edit) = get_content_edit(&request); // There is always a wildcard match
+    debug!("Using content edit {i} for {uri}");
 
     // Apply edit on request
-    if let Some(ce) = content_edit {
-        apply_edit_request(&mut request, ce).await;
-        content_edit = get_content_edit(&request);
-    }
+    apply_edit_request(&mut request, content_edit).await;
+    content_edit = get_content_edit(&request).1;
 
     // Add host header
     if let Some(authority) = uri.authority() {
@@ -276,9 +312,7 @@ pub async fn proxiedFetch(ressource: JsValue, options: JsValue) -> Result<JsValu
     };
 
     // Apply edit on response
-    if let Some(ce) = content_edit {
-        apply_edit_response(&mut response, ce).await;
-    }
+    apply_edit_response(&mut response, content_edit).await;
 
     // Convert response to JS
     let mut init = ResponseInit::new();

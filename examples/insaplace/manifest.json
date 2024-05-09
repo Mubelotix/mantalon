@@ -1,0 +1,43 @@
+{
+    "domains": ["app.dev.insaplace.me", "www.google.com", "www.gstatic.com"],
+    "lock_browsing": true,
+    "content_edits": [
+        {
+            "matches": ["https://www.google.com/recaptcha/api.js"],
+            "substitute": [
+                {
+                    "pattern": "po.integrity",
+                    "replacement": "let integrity"
+                }
+            ]
+        },
+        {
+            "matches": ["https://www.google.com/recaptcha/api2/anchor?*"],
+            "remove_headers": [
+                "content-security-policy"
+            ]
+        },
+        {
+            "matches": ["https://www.gstatic.com/recaptcha/releases/*/recaptcha__en.js"],
+            "substitute": [
+                {
+                    "pattern": "window.location",
+                    "replacement": "window.fakeLocation"
+                },
+                {
+                    "pattern": "document.location",
+                    "replacement": "window.fakeLocation"
+                },
+                {
+                    "pattern": "new Worker",
+                    "replacement": "new FakeWorker"
+                },
+                {
+                    "pattern": "",
+                    "replacement_file": "fake-location.js",
+                    "max_replacements": 1
+                }
+            ]
+        }
+    ]
+}

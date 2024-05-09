@@ -1,4 +1,4 @@
-use std::{cell::UnsafeCell, collections::HashMap, ops::Deref};
+use std::{cell::UnsafeCell, collections::{HashMap, HashSet}, ops::Deref};
 use crate::*;
 use http::{uri::InvalidUri, HeaderName, HeaderValue, Uri};
 use lazy_static::lazy_static;
@@ -34,15 +34,22 @@ pub struct ContentEdit {
     #[serde(default)]
     pub insert_headers: HashMap<String, String>,
     #[serde(default)]
+    pub remove_headers: Vec<String>,
+    #[serde(default)]
     pub append_request_headers: HashMap<String, String>,
     #[serde(default)]
     pub insert_request_headers: HashMap<String, String>,
+    #[serde(default)]
+    pub remove_request_headers: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Substitution {
     pub pattern: String,
-    pub replacement: String,
+    #[serde(default)]
+    pub replacement: Option<String>,
+    #[serde(default)]
+    pub replacement_file: Option<String>,
     #[serde(default)]
     pub max_replacements: Option<usize>,
 }
@@ -84,8 +91,10 @@ pub struct ParsedContentEdit {
     pub substitute: Vec<Substitution>,
     pub append_headers: HashMap<HeaderName, HeaderValue>,
     pub insert_headers: HashMap<HeaderName, HeaderValue>,
+    pub remove_headers: HashSet<HeaderName>,
     pub append_request_headers: HashMap<HeaderName, HeaderValue>,
     pub insert_request_headers: HashMap<HeaderName, HeaderValue>,
+    pub remove_request_headers: HashSet<HeaderName>,
 }
 
 #[derive(Debug)]
@@ -143,6 +152,21 @@ fn parse_headers(headers: HashMap<String, String>) -> HashMap<HeaderName, Header
     parsed_headers
 }
 
+fn parse_header_list(headers: Vec<String>) -> HashSet<HeaderName> {
+    let mut parsed_headers = HashSet::new();
+    for h in headers {
+        let h = match HeaderName::from_bytes(h.as_bytes()) {
+            Ok(h) => h,
+            Err(e) => {
+                error!("Invalid header name {h:?}: {:?}", e);
+                continue;
+            }
+        };
+        parsed_headers.insert(h);
+    }
+    parsed_headers
+}
+
 pub async fn update_manifest() -> Result<(), UpdateManifestError> {
     let promise = window().map(|w| w.fetch_with_str("/pkg/config/manifest.json"))
         .or_else(|| js_sys::global().dyn_into::<ServiceWorkerGlobalScope>().ok().map(|sw| sw.fetch_with_str("/pkg/config/manifest.json")))
@@ -173,6 +197,12 @@ pub async fn update_manifest() -> Result<(), UpdateManifestError> {
     for edit in manifest.content_edits {
         let mut matches = Vec::new();
         for pattern in edit.matches {
+            if pattern == "*" {
+                let pattern_init = UrlPatternInit::default();
+                let pattern = UrlPattern::parse(pattern_init).unwrap();
+                matches.push(pattern);
+                continue;
+            }
             let pattern_init = match UrlPatternInit::parse_constructor_string::<regex::Regex>(&pattern, Some(base_url.clone())) {
                 Ok(init) => init,
                 Err(e) => {
@@ -201,12 +231,15 @@ pub async fn update_manifest() -> Result<(), UpdateManifestError> {
             substitute: edit.substitute,
             append_headers: parse_headers(edit.append_headers),
             insert_headers: parse_headers(edit.insert_headers),
+            remove_headers: parse_header_list(edit.remove_headers),
             append_request_headers: parse_headers(edit.append_request_headers),
             insert_request_headers: parse_headers(edit.insert_request_headers),
+            remove_request_headers: parse_header_list(edit.remove_request_headers),
         };
 
         parsed_manifest.content_edits.push(parsed_edit);
     }
+    debug!("Manifest: {:#?}", parsed_manifest);
     
     let static_manifest: &mut ParsedManifest = unsafe { &mut *MANIFEST.0.get() };
     *static_manifest = parsed_manifest;
