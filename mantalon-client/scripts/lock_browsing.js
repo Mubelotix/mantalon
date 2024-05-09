@@ -1,5 +1,5 @@
 var pageHostname = window.location.hostname;
-function controlledUrl(url) {
+function controlledUrl(url, navigate) {
     if (!url) {
         return url;
     }
@@ -9,7 +9,7 @@ function controlledUrl(url) {
             let newUrl = new URL(url);
             newUrl.searchParams.set('mantalon-protocol', newUrl.protocol);
             newUrl.searchParams.set('mantalon-host', newUrl.host);
-            newUrl.searchParams.set('mantalon-navigate', "true");
+            newUrl.searchParams.set('mantalon-navigate', navigate);
             newUrl.protocol = "http:";
             newUrl.host = "localhost:8000";
             return newUrl;
@@ -25,7 +25,7 @@ function controlledUrl(url) {
 document.addEventListener("click", function (e) {
     var target = e.target;
     if (target.tagName == 'A') {
-        target.href = controlledUrl(target.href);
+        target.href = controlledUrl(target.href, true);
     }
 }, true);
 
@@ -34,7 +34,7 @@ function replaceIframeUrls() {
     let iframes = document.getElementsByTagName('iframe');
     for (let i = 0; i < iframes.length; i++) {
         let iframe = iframes[i];
-        iframe.src = controlledUrl(iframe.src);
+        iframe.src = controlledUrl(iframe.src, false);
     }
 }
 replaceIframeUrls();
