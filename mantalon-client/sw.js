@@ -4,6 +4,10 @@ var currentHostnames = {}; // TODO: use authority
 async function respond(request, clientId, replacesClientId) {
     // Directly fetch Mantalon resources
     let url = new URL(request.url);
+    let url_params = new URLSearchParams(url.search);
+    let mantalonProtocol = url_params.get("mantalon-protocol");
+    let mantalonHost = url_params.get("mantalon-host");
+    let mantalonNavigate = url_params.get("mantalon-navigate");
     if (url.pathname.startsWith("/pkg/")
         || url.pathname.startsWith("/mantalon-connect/")
         || url.pathname === "/mantalon-connect"
@@ -12,15 +16,12 @@ async function respond(request, clientId, replacesClientId) {
     }
 
     // Handle artificial navigation requests
-    if (url.href.startsWith(self.location.origin + "/mantalon/navigate?url=")) {
-        let url_params = new URLSearchParams(url.search);
-        let next_url_str = url_params.get("url");
-        let next_url = new URL(next_url_str);
-        currentHostnames[clientId] = next_url.hostname;
-        next_url.protocol = self.location.protocol;
-        next_url.hostname = self.location.hostname;
-        next_url.port = self.location.port;
-        return Response.redirect(next_url.href, 302);
+    if (mantalonNavigate === "true") {
+        if (mantalonHost) {
+            currentHostnames[clientId] = mantalonHost;
+        } else {
+            console.error("No mantalon-host provided for navigation request");
+        }
     }
 
     // Wait for Mantalon to initialize
@@ -41,9 +42,15 @@ async function respond(request, clientId, replacesClientId) {
         if (!currentHostnames[clientId]) {
             currentHostnames[clientId] = self.proxiedDomains[0];
         }
-        url.protocol = "https"; // TODO support http proxied sites
-        url.hostname = currentHostnames[clientId];
-        url.port = ""; // TODO support proxied sites with port
+        if (mantalonProtocol && mantalonHost) {
+            url.protocol = mantalonProtocol;
+            url.hostname = mantalonHost.split(":")[0];
+            url.port = mantalonHost.split(":")[1] || "";
+        } else {
+            url.protocol = "https"; // TODO support http proxied sites
+            url.hostname = currentHostnames[clientId];
+            url.port = ""; // TODO support proxied sites with port
+        }
         let resp = await proxiedFetch(request, url.href);
         if (replacesClientId) {
             let location = resp.headers.get("x-mantalon-location");

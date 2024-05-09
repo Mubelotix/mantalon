@@ -46,7 +46,11 @@ window.fakeLocation = new FakeLocation("app.dev.insaplace.me");
 class FakeWorker {
     constructor(url, options) {
         let newUrl = new URL(url);
-        newUrl.href = "http://localhost:8000/mantalon/navigate?url=" + encodeURIComponent(newUrl)
+        newUrl.searchParams.set('mantalon-protocol', newUrl.protocol);
+        newUrl.searchParams.set('mantalon-host', newUrl.host);
+        newUrl.searchParams.set('mantalon-navigate', "false");
+        newUrl.protocol = "http:";
+        newUrl.host = "localhost:8000";
         this._worker = new Worker(newUrl, options);
     }
 

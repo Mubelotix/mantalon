@@ -6,8 +6,12 @@ function controlledUrl(url) {
     try {
         let targetHostname = new URL(url).hostname;
         if (targetHostname != pageHostname && [proxiedDomains].includes(targetHostname)) { // TODO use origins
-            let newUrl = "/mantalon/navigate?url=" + encodeURIComponent(url);
-            console.log(`Replacing ${url} with ${newUrl}`)
+            let newUrl = new URL(url);
+            newUrl.searchParams.set('mantalon-protocol', newUrl.protocol);
+            newUrl.searchParams.set('mantalon-host', newUrl.host);
+            newUrl.searchParams.set('mantalon-navigate', "true");
+            newUrl.protocol = "http:";
+            newUrl.host = "localhost:8000";
             return newUrl;
         } else {
             return url;
