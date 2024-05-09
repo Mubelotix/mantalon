@@ -114,23 +114,40 @@ impl Pool {
                 };
                 websocket.ready().await;
 
-                // Encrypt stream
-                let mut root_cert_store = RootCertStore::empty();
-                root_cert_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-                let config = ClientConfig::builder()
-                    .with_root_certificates(root_cert_store)
-                    .with_no_client_auth();
-                let connector = TlsConnector::from(Arc::new(config));
-                let stream = connector.connect(server_name, websocket).await.map_err(SendRequestError::TlsConnect)?;
-                let stream = TokioIo::new(stream);
-                let (request_sender, connection) = conn::http1::handshake(stream).await.map_err(SendRequestError::HttpHandshake)?;
+                let request_sender = if uri.scheme().map(|s| s.as_str()).unwrap_or_default() == "https" {
+                    // Encrypt stream :)
+                    let mut root_cert_store = RootCertStore::empty();
+                    root_cert_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+                    let config = ClientConfig::builder()
+                        .with_root_certificates(root_cert_store)
+                        .with_no_client_auth();
+                    let connector = TlsConnector::from(Arc::new(config));
+                    let stream = connector.connect(server_name, websocket).await.map_err(SendRequestError::TlsConnect)?;
+                    let stream = TokioIo::new(stream);
+                    let (request_sender, connection) = conn::http1::handshake(stream).await.map_err(SendRequestError::HttpHandshake)?;
+                
+                    // Spawn a task to poll the connection and drive the HTTP state
+                    spawn_local(async move {
+                        if let Err(e) = connection.await {
+                            error!("Error in connection: {}", e);
+                        }
+                    });
 
-                // Spawn a task to poll the connection and drive the HTTP state
-                spawn_local(async move {
-                    if let Err(e) = connection.await {
-                        error!("Error in connection: {}", e);
-                    }
-                });
+                    request_sender
+                } else {
+                    // Don't encrypt stream :(
+                    let stream = TokioIo::new(websocket);
+                    let (request_sender, connection) = conn::http1::handshake(stream).await.map_err(SendRequestError::HttpHandshake)?;
+                
+                    // Spawn a task to poll the connection and drive the HTTP state
+                    spawn_local(async move {
+                        if let Err(e) = connection.await {
+                            error!("Error in connection: {}", e);
+                        }
+                    });
+
+                    request_sender
+                };
 
                 // Store the connection
                 let request_sender = Rc::new(Mutex::new(request_sender));
