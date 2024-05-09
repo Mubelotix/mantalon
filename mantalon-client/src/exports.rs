@@ -89,7 +89,7 @@ pub fn get_content_edit(request: &http::Request<Empty<Bytes>>) -> (usize, &'stat
     MANIFEST.content_edits
         .iter()
         .enumerate()
-        .find(|(_, ref ce)| ce.matches.iter().any(|pattern| pattern.test(pattern_match_input.clone())
+        .find(|(_, ce)| ce.matches.iter().any(|pattern| pattern.test(pattern_match_input.clone())
         .unwrap_or_default()))
         .unwrap() // There is always a wildcard match
 }

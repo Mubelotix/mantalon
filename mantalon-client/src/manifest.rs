@@ -152,6 +152,7 @@ fn parse_headers(headers: HashMap<String, String>) -> HashMap<HeaderName, Header
     parsed_headers
 }
 
+#[allow(clippy::mutable_key_type)]
 fn parse_header_list(headers: Vec<String>) -> HashSet<HeaderName> {
     let mut parsed_headers = HashSet::new();
     for h in headers {

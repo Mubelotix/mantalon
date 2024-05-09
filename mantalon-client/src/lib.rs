@@ -1,3 +1,5 @@
+#![allow(clippy::map_clone)]
+
 use std::sync::Arc;
 use tokio_rustls::{rustls::{pki_types::{ServerName, IpAddr as RustlsIpAddr}, ClientConfig, RootCertStore}, TlsConnector};
 use wasm_bindgen::prelude::*;

@@ -1,11 +1,10 @@
 use std::{collections::HashMap, rc::Rc, io::Error as IoError};
-
 use bytes::Bytes;
 use http::{Request, Response, Uri};
 use http_body_util::Empty;
 use hyper::client::conn::http1::SendRequest;
 use tokio::sync::RwLock;
-use tokio_rustls::rustls::pki_types::{self, InvalidDnsNameError};
+use tokio_rustls::rustls::pki_types::InvalidDnsNameError;
 use crate::*;
 use lazy_static::lazy_static;
 use tokio::sync::Mutex;
@@ -16,6 +15,7 @@ lazy_static!{
 
 #[derive(Default)]
 pub struct Pool {
+    #[allow(clippy::type_complexity)]
     connections: Rc<RwLock<HashMap<String, Rc<Mutex<SendRequest<Empty<Bytes>>>>>>>
 }
 
