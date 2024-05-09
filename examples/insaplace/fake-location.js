@@ -5,11 +5,11 @@ class FakeLocation {
     }
 
     get href() {
-        return window.location.protocol + "//" + this._host + window.location.pathname + window.location.search + window.location.hash;
+        return "https://" + this._host + window.location.pathname + window.location.search + window.location.hash;
     }
 
     get protocol() {
-        return window.location.protocol;
+        return "https:"
     }
 
     get host() {
@@ -40,7 +40,8 @@ class FakeLocation {
         return window.location.protocol + "//" + this._host;
     }
 }
-window.fakeLocation = new FakeLocation("app.dev.insaplace.me");
+let global = (typeof window !== 'undefined') ? window : self;
+global.fakeLocation = new FakeLocation("app.dev.insaplace.me");
 
 // Replicates the Worker class
 class FakeWorker {
@@ -52,9 +53,19 @@ class FakeWorker {
         newUrl.protocol = "http:";
         newUrl.host = "localhost:8000";
         this._worker = new Worker(newUrl, options);
+        this._worker.onmessage = function(event) {
+            console.log("Received message from worker", event);
+        }.bind(this);
+        this._worker.onerror = function(event) {
+            console.log("Received error from worker", event);
+        }.bind(this);
+        this._worker.onmessageerror = function(event) {
+            console.log("Received message error from worker", event);
+        }.bind(this);
     }
 
     postMessage(message) {
+        console.log("Sending message to worker", message);
         this._worker.postMessage(message);
     }
 
@@ -63,11 +74,43 @@ class FakeWorker {
     }
 }
 
+// Replicate the MessageChannel class
+class FakeMessageChannel {
+    constructor() {
+        this._channel = new MessageChannel();
+        this._channel.port1.addEventListener("message", function(event) {
+            console.log("Received message from port1", event, global);
+        });
+        this._channel.port2.addEventListener("message", function(event) {
+            console.log("Received message from port2", event, global);
+        });
+        this._channel.port1.addEventListener("messageerror", function(event) {
+            console.log("Received message error from port1", event, global);
+        });
+        this._channel.port2.addEventListener("messageerror", function(event) {
+            console.log("Received message error from port2", event, global);
+        });
+        this._channel.port1.start();
+        this._channel.port2.start();
+    }
+
+    get port1() {
+        return this._channel.port1;
+    }
+
+    get port2() {
+        return this._channel.port2;
+    }
+}
+
 // Replicates postMessage
-window.oldPostMessage = window.postMessage;
-window.postMessage = function(message, targetOrigin, transfer) {
+global.fakePostMessage = function(message, targetOrigin, transfer) {
     if (targetOrigin.includes("app.dev.insaplace.me")) {
         targetOrigin = "http://localhost:8000"
     }
-    window.oldPostMessage(message, targetOrigin, transfer);
+    console.log("Sending message to", targetOrigin, message, transfer);
+    global.postMessage(message, "*", transfer);
 };
+global.addEventListener("message", function(event) {
+    console.log("Received message", event);
+});

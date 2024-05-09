@@ -1,6 +1,5 @@
 {
     "domains": ["app.dev.insaplace.me", "www.google.com", "www.gstatic.com"],
-    "lock_browsing": true,
     "https_only": true,
     "content_edits": [
         {
@@ -16,6 +15,18 @@
             "matches": ["https://www.google.com/recaptcha/api2/anchor?*"],
             "remove_headers": [
                 "content-security-policy"
+            ],
+            "substitute": [
+                {
+                    "pattern": "recaptcha.anchor.Main",
+                    "replacement": "console.log('init');recaptcha.anchor.Main",
+                    "max_replacements": 1
+                },
+                {
+                    "pattern": "]\");\n",
+                    "replacement": "]\");\nconsole.log('init off');",
+                    "max_replacements": 1
+                }
             ]
         },
         {
@@ -30,8 +41,28 @@
                     "replacement": "window.fakeLocation"
                 },
                 {
+                    "pattern": "self.location",
+                    "replacement": "self.fakeLocation"
+                },
+                {
+                    "pattern": "A.postMessage",
+                    "replacement": "A[0].fakePostMessage"
+                },
+                {
+                    "pattern": "r.J0.origin",
+                    "replacement": "\"https://www.google.com\""
+                },
+                {
+                    "pattern": "O.origin",
+                    "replacement": "\"https://www.google.com\""
+                },
+                {
                     "pattern": "new Worker",
                     "replacement": "new FakeWorker"
+                },
+                {
+                    "pattern": "new MessageChannel",
+                    "replacement": "new FakeMessageChannel"
                 },
                 {
                     "pattern": "",
@@ -52,6 +83,10 @@
                     "replacement": "recaptcha__en.js?mantalon-protocol=https%3A&mantalon-host=www.gstatic.com"
                 }
             ]
+        },
+        {
+            "matches": ["*"],
+            "lock_browsing": true
         }
     ]
 }
