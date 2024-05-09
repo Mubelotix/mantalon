@@ -64,11 +64,12 @@ pub async fn read_body(mut body: Incoming) -> Option<Vec<u8>> {
     Some(body_bytes)
 }
 
-pub async fn proxied_fetch(request: http::Request<Empty<Bytes>>) -> Result<http::Response<Incoming>, ()> {
+pub async fn proxied_fetch(request: http::Request<Empty<Bytes>>) -> Result<http::Response<Incoming>, SendRequestError> {
     debug!("Request: {request:?}");
 
     let response = POOL.send_request(request).await.map_err(|e| {
         error!("Error sending request: {:?}", e);
+        e
     })?;
     
     debug!("Response: {response:?}");

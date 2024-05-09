@@ -308,7 +308,7 @@ pub async fn proxiedFetch(ressource: JsValue, options: JsValue) -> Result<JsValu
     // Send request
     let mut response = match proxied_fetch(request).await {
         Ok(response) => complete_response(response).await,
-        Err(()) => return Err(JsValue::from_str("Error")),
+        Err(error) => return Err(JsValue::from_str(&error.to_string())),
     };
 
     // Apply edit on response

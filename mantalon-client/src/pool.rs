@@ -1,10 +1,11 @@
-use std::{collections::HashMap, rc::Rc};
+use std::{collections::HashMap, rc::Rc, io::Error as IoError};
 
 use bytes::Bytes;
 use http::{Request, Response, Uri};
 use http_body_util::Empty;
 use hyper::client::conn::http1::SendRequest;
 use tokio::sync::RwLock;
+use tokio_rustls::rustls::pki_types::{self, InvalidDnsNameError};
 use crate::*;
 use lazy_static::lazy_static;
 use tokio::sync::Mutex;
@@ -21,19 +22,49 @@ pub struct Pool {
 unsafe impl Send for Pool {}
 unsafe impl Sync for Pool {}
 
-fn get_server(uri: &Uri) -> Result<(String, ServerName<'static>), ()> {
+#[derive(Debug)]
+pub enum SendRequestError {
+    NoScheme,
+    UnsupportedScheme(String),
+    NoHost,
+    ServerNameParseError(InvalidDnsNameError),
+    UnsupportedServerNameType,
+    TlsConnect(IoError),
+    ConnectionNotReady,
+    HttpHandshake(hyper::Error),
+    Hyper(hyper::Error),
+}
+
+impl std::fmt::Display for SendRequestError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SendRequestError::NoScheme => write!(f, "No scheme in URI"),
+            SendRequestError::UnsupportedScheme(scheme) => write!(f, "Unsupported scheme: {scheme}"),
+            SendRequestError::NoHost => write!(f, "No host in URI"),
+            SendRequestError::ServerNameParseError(e) => write!(f, "Error parsing server name: {e}"),
+            SendRequestError::UnsupportedServerNameType => write!(f, "Unsupported server name type"),
+            SendRequestError::TlsConnect(e) => write!(f, "Error connecting to TLS server: {e}"),
+            SendRequestError::ConnectionNotReady => write!(f, "Connection not ready"),
+            SendRequestError::HttpHandshake(e) => write!(f, "Error in HTTP handshake: {e}"),
+            SendRequestError::Hyper(e) => write!(f, "Hyper error: {e}"),
+        }
+    }
+}
+
+impl std::error::Error for SendRequestError {}
+
+fn get_server(uri: &Uri) -> Result<(String, ServerName<'static>), SendRequestError> {
     let port = match uri.port_u16() {
         Some(port) => port,
         None => match uri.scheme_str() {
             Some("http") => 80,
             Some("https") => 443,
-            _ => {
-                error!("Unsupported scheme: {:?}", uri.scheme());
-                return Err(());
-            }
+            Some(any) => return Err(SendRequestError::UnsupportedScheme(any.to_owned())),
+            None => return Err(SendRequestError::NoScheme),
         }
     };
-    let server_name = ServerName::try_from(uri.authority().map(|a| a.host().to_owned()).unwrap()).unwrap();
+    let host = uri.authority().map(|a| a.host().to_owned()).ok_or(SendRequestError::NoHost)?;
+    let server_name = ServerName::try_from(host).map_err(SendRequestError::ServerNameParseError)?;
     let multiaddr = match &server_name {
         ServerName::DnsName(domain) => format!("dnsaddr/{}/tcp/{port}", domain.as_ref()),
         ServerName::IpAddress(RustlsIpAddr::V4(ip)) => {
@@ -46,27 +77,24 @@ fn get_server(uri: &Uri) -> Result<(String, ServerName<'static>), ()> {
             let [a, b, c, d, e, f, g, h] = array;
             format!("ip6/{a}:{b}:{c}:{d}:{e}:{f}:{g}:{h}/tcp/{port}")
         },
-        other => {
-            error!("Unsupported server name type: {:?}", other);
-            return Err(());
-        }
+        _ => return Err(SendRequestError::UnsupportedServerNameType),
     };
     
     Ok((multiaddr, server_name))
 }
 
 impl Pool {
-    pub async fn send_request(&self, request: Request<Empty<Bytes>>) -> Result<Response<Incoming>, hyper::Error> {
+    pub async fn send_request(&self, request: Request<Empty<Bytes>>) -> Result<Response<Incoming>, SendRequestError> {
         let uri = request.uri();
-        let (multiaddr, server_name) = get_server(uri).unwrap();
+        let (multiaddr, server_name) = get_server(uri)?;
 
         match self.connections.read().await.get(&multiaddr).map(Rc::clone) {
             Some(t) => {
                 debug!("Reusing connection to {}", multiaddr);
                 
                 let mut conn = t.lock().await;
-                conn.ready().await.unwrap();
-                conn.send_request(request).await
+                conn.ready().await.map_err(|_| SendRequestError::ConnectionNotReady)?;
+                conn.send_request(request).await.map_err(SendRequestError::Hyper)
             }
             None => {
                 debug!("Opening connection to {}", multiaddr);
@@ -93,9 +121,9 @@ impl Pool {
                     .with_root_certificates(root_cert_store)
                     .with_no_client_auth();
                 let connector = TlsConnector::from(Arc::new(config));
-                let stream = connector.connect(server_name, websocket).await.unwrap();
+                let stream = connector.connect(server_name, websocket).await.map_err(SendRequestError::TlsConnect)?;
                 let stream = TokioIo::new(stream);
-                let (request_sender, connection) = conn::http1::handshake(stream).await.unwrap();
+                let (request_sender, connection) = conn::http1::handshake(stream).await.map_err(SendRequestError::HttpHandshake)?;
 
                 // Spawn a task to poll the connection and drive the HTTP state
                 spawn_local(async move {
@@ -107,7 +135,7 @@ impl Pool {
                 // Store the connection
                 let request_sender = Rc::new(Mutex::new(request_sender));
                 let request_sender2 = Rc::clone(&request_sender);
-                let mut request_sender = request_sender.try_lock().unwrap();
+                let mut request_sender = request_sender.try_lock().expect("a mutex we just created can't be initially locked");
                 if let Ok(mut connections) = self.connections.try_write() {
                     connections.insert(multiaddr.clone(), request_sender2);
                 } else {
@@ -118,8 +146,8 @@ impl Pool {
                 }
 
                 // Send the request
-                request_sender.ready().await.unwrap();
-                request_sender.send_request(request).await
+                request_sender.ready().await.map_err(|_| SendRequestError::ConnectionNotReady)?;
+                request_sender.send_request(request).await.map_err(SendRequestError::Hyper)
             }
         }
     }
