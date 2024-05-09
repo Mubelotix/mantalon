@@ -58,3 +58,12 @@ class FakeWorker {
         this._worker.terminate();
     }
 }
+
+// Replicates postMessage
+window.oldPostMessage = window.postMessage;
+window.postMessage = function(message, targetOrigin, transfer) {
+    if (targetOrigin.includes("app.dev.insaplace.me")) {
+        targetOrigin = "http://localhost:8000"
+    }
+    window.oldPostMessage(message, targetOrigin, transfer);
+};
