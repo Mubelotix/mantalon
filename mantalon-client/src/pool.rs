@@ -1,7 +1,7 @@
-use std::{collections::HashMap, rc::Rc, io::Error as IoError};
+use std::{collections::HashMap, future::Future, io::Error as IoError, rc::Rc};
 use bytes::Bytes;
 use http::{Request, Response, Uri};
-use hyper::client::conn::http1::SendRequest;
+use hyper::{client::conn::http2::SendRequest, rt::bounds::Http2ClientConnExec};
 use tokio::sync::RwLock;
 use tokio_rustls::rustls::pki_types::InvalidDnsNameError;
 use crate::*;
@@ -82,6 +82,22 @@ fn get_server(uri: &Uri) -> Result<(String, ServerName<'static>), SendRequestErr
     Ok((multiaddr, server_name))
 }
 
+#[derive(Clone)]
+struct WasmExecutor;
+
+impl<Fut> hyper::rt::Executor<Fut> for WasmExecutor
+    where
+    Fut: Future + Send + 'static,
+    Fut::Output: Send + 'static,
+{
+    fn execute(&self, fut: Fut) {
+        spawn_local(async move {fut.await;});
+    }
+}
+
+unsafe impl Send for WasmExecutor {}
+unsafe impl Sync for WasmExecutor {}
+
 impl Pool {
     pub async fn send_request(&self, request: Request<MantalonBody>) -> Result<Response<Incoming>, SendRequestError> {
         let uri = request.uri();
@@ -117,13 +133,15 @@ impl Pool {
                     // Encrypt stream :)
                     let mut root_cert_store = RootCertStore::empty();
                     root_cert_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-                    let config = ClientConfig::builder()
+                    let mut config = ClientConfig::builder()
                         .with_root_certificates(root_cert_store)
                         .with_no_client_auth();
+                    config.alpn_protocols.push(b"h2".to_vec());
+                    config.alpn_protocols.push(b"http/1.1".to_vec());
                     let connector = TlsConnector::from(Arc::new(config));
                     let stream = connector.connect(server_name, websocket).await.map_err(SendRequestError::TlsConnect)?;
                     let stream = TokioIo::new(stream);
-                    let (request_sender, connection) = conn::http1::handshake(stream).await.map_err(SendRequestError::HttpHandshake)?;
+                    let (request_sender, connection) = conn::http2::handshake(WasmExecutor, stream).await.map_err(SendRequestError::HttpHandshake)?;
                 
                     // Spawn a task to poll the connection and drive the HTTP state
                     spawn_local(async move {
@@ -136,7 +154,7 @@ impl Pool {
                 } else {
                     // Don't encrypt stream :(
                     let stream = TokioIo::new(websocket);
-                    let (request_sender, connection) = conn::http1::handshake(stream).await.map_err(SendRequestError::HttpHandshake)?;
+                    let (request_sender, connection) = conn::http2::handshake(WasmExecutor, stream).await.map_err(SendRequestError::HttpHandshake)?;
                 
                     // Spawn a task to poll the connection and drive the HTTP state
                     spawn_local(async move {

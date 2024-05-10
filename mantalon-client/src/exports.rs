@@ -284,13 +284,11 @@ pub async fn proxiedFetch(ressource: JsValue, options: JsValue) -> Result<JsValu
 
     // Build request
     let request = http::Request::builder()
+        .version(http::Version::HTTP_2)
         .method(method)
         .uri(uri.clone());
     let mut request = match body {
-        Some(body) => {
-            headers.insert("transfer-encoding", "chunked".parse().unwrap());
-            request.body(body).unwrap()
-        },
+        Some(body) => request.body(body).unwrap(),
         None => request.body(MantalonBody::Empty).unwrap(),
     };
     *request.headers_mut() = headers;

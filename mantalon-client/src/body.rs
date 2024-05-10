@@ -22,6 +22,9 @@ impl fmt::Debug for MantalonBody {
     }
 }
 
+unsafe impl Send for MantalonBody {}
+unsafe impl Sync for MantalonBody {}
+
 /// The errors that can occur when reading from a `MantalonBody`.
 #[derive(Debug)]
 pub enum MantalonBodyError {
@@ -78,5 +81,13 @@ impl Body for MantalonBody {
                 }
             },
         }
+    }
+    
+    fn is_end_stream(&self) -> bool {
+        false
+    }
+    
+    fn size_hint(&self) -> hyper::body::SizeHint {
+        hyper::body::SizeHint::default()
     }
 }

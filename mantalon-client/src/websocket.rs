@@ -38,6 +38,9 @@ pub struct WrappedWebSocket {
     ws: WebSocket
 }
 
+unsafe impl Send for WrappedWebSocket {}
+unsafe impl Sync for WrappedWebSocket {}
+
 impl WrappedWebSocket {
     pub fn new(ws: WebSocket, on_close: impl FnOnce() + 'static) -> Self {
         let buffer = Rc::new(RefCell::new(VecDeque::new()));
