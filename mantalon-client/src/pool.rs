@@ -28,6 +28,7 @@ pub enum SendRequestError {
     NoHost,
     ServerNameParseError(InvalidDnsNameError),
     UnsupportedServerNameType,
+    Websocket(JsValue),
     TlsConnect(IoError),
     ConnectionNotReady,
     HttpHandshake(hyper::Error),
@@ -41,6 +42,7 @@ impl std::fmt::Display for SendRequestError {
             SendRequestError::UnsupportedScheme(scheme) => write!(f, "Unsupported scheme: {scheme}"),
             SendRequestError::NoHost => write!(f, "No host in URI"),
             SendRequestError::ServerNameParseError(e) => write!(f, "Error parsing server name: {e}"),
+            SendRequestError::Websocket(e) => write!(f, "Error opening websocket: {e:?}"),
             SendRequestError::UnsupportedServerNameType => write!(f, "Unsupported server name type"),
             SendRequestError::TlsConnect(e) => write!(f, "Error connecting to TLS server: {e}"),
             SendRequestError::ConnectionNotReady => write!(f, "Connection not ready"),
@@ -119,14 +121,8 @@ impl Pool {
                 let connections2 = Rc::clone(&self.connections);
                 let multiaddr2 = multiaddr.clone();
                 let on_close = || spawn_local(async move { connections2.write().await.remove(&multiaddr2); });
-                let websocket = match WebSocket::new(&ws_url) {
-                    Ok(websocket) => WrappedWebSocket::new(websocket, on_close),
-                    Err(err) => {
-                        error!("Could not open websocket to mantalon proxy server: {:?}", err);
-                        todo!()
-                        //return Err(());
-                    }
-                };
+                let websocket = WebSocket::new(&ws_url).map_err(SendRequestError::Websocket)?;
+                let websocket = WrappedWebSocket::new(websocket, on_close);
                 websocket.ready().await;
 
                 let request_sender = if uri.scheme().map(|s| s.as_str()).unwrap_or_default() == "https" {
