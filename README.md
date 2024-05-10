@@ -1,6 +1,6 @@
 # Mantalon
 
-Mantalon empowers you to seamlessly inject code into third-party websites, adeptly navigating CORS restrictions and CSP policies.
+Mantalon empowers you to seamlessly inject code into third-party websites, adeptly circumventing CORS restrictions and CSP policies.
 
 Moreover, Mantalon stands as a **privacy-preserving** solution, safeguarding the encryption between the client and the third-party website. Operating through TLS-encrypted HTTP streams, this proxy ensures data integrity unlike any other solution, such as nginx-proxied websites.
 
