@@ -45,4 +45,6 @@ features = [
     "ResponseInit",
     "Headers",
     "Request",
+    "ReadableStream",
+    "ReadableStreamDefaultReader",
 ]

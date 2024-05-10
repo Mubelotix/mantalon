@@ -1,7 +1,6 @@
 use std::{collections::HashMap, rc::Rc, io::Error as IoError};
 use bytes::Bytes;
 use http::{Request, Response, Uri};
-use http_body_util::Empty;
 use hyper::client::conn::http1::SendRequest;
 use tokio::sync::RwLock;
 use tokio_rustls::rustls::pki_types::InvalidDnsNameError;
@@ -16,7 +15,7 @@ lazy_static!{
 #[derive(Default)]
 pub struct Pool {
     #[allow(clippy::type_complexity)]
-    connections: Rc<RwLock<HashMap<String, Rc<Mutex<SendRequest<Empty<Bytes>>>>>>>
+    connections: Rc<RwLock<HashMap<String, Rc<Mutex<SendRequest<MantalonBody>>>>>>
 }
 
 unsafe impl Send for Pool {}
@@ -84,7 +83,7 @@ fn get_server(uri: &Uri) -> Result<(String, ServerName<'static>), SendRequestErr
 }
 
 impl Pool {
-    pub async fn send_request(&self, request: Request<Empty<Bytes>>) -> Result<Response<Incoming>, SendRequestError> {
+    pub async fn send_request(&self, request: Request<MantalonBody>) -> Result<Response<Incoming>, SendRequestError> {
         let uri = request.uri();
         let (multiaddr, server_name) = get_server(uri)?;
 

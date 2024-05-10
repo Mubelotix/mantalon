@@ -83,18 +83,17 @@ fn replace_in_vec(data: &mut Vec<u8>, pattern: &String, replacement: &String, ma
     }
 }
 
-pub fn get_content_edit(request: &http::Request<Empty<Bytes>>) -> (usize, &'static ParsedContentEdit) {
+pub fn get_content_edit(request: &http::Request<MantalonBody>) -> (usize, &'static ParsedContentEdit) {
     let url = Url::parse(&request.uri().to_string()).unwrap();
     let pattern_match_input = UrlPatternMatchInput::Url(url);
     MANIFEST.content_edits
         .iter()
         .enumerate()
-        .find(|(_, ce)| ce.matches.iter().any(|pattern| pattern.test(pattern_match_input.clone())
-        .unwrap_or_default()))
+        .find(|(_, ce)| ce.matches.iter().any(|pattern| pattern.test(pattern_match_input.clone()).unwrap_or_default()))
         .unwrap() // There is always a wildcard match
 }
 
-pub async fn apply_edit_request(request: &mut http::Request<Empty<Bytes>>, content_edit: &ParsedContentEdit) {
+pub async fn apply_edit_request(request: &mut http::Request<MantalonBody>, content_edit: &ParsedContentEdit) {
     if let Some(override_url) = &content_edit.override_uri {
         *request.uri_mut() = override_url.clone(); // FIXME: we might not need to proxy this then
     }
@@ -220,6 +219,7 @@ pub async fn proxiedFetch(ressource: JsValue, options: JsValue) -> Result<JsValu
     let mut headers = http::HeaderMap::<http::HeaderValue>::new();
     let mut method = Method::GET;
     let mut url = String::new();
+    let mut body = None;
     if let Some(options) = options.as_string() {
         url = options;
     } else if let Ok(options) = options.dyn_into::<Map>() {
@@ -259,7 +259,7 @@ pub async fn proxiedFetch(ressource: JsValue, options: JsValue) -> Result<JsValu
                     url = request.url();
                 }
                 headers = from_headers(request.headers().into());
-                // TODO body
+                body = request.body().map(|b| b.into());
             },
             Err(ressource) => {
                 if let Some(ressource) = get(&ressource, &JsValue::from_str("toString")).ok()
@@ -283,11 +283,16 @@ pub async fn proxiedFetch(ressource: JsValue, options: JsValue) -> Result<JsValu
     };
 
     // Build request
-    let mut request = http::Request::builder()
+    let request = http::Request::builder()
         .method(method)
-        .uri(uri.clone())
-        .body(Empty::<Bytes>::new())
-        .unwrap();
+        .uri(uri.clone());
+    let mut request = match body {
+        Some(body) => {
+            headers.insert("transfer-encoding", "chunked".parse().unwrap());
+            request.body(body).unwrap()
+        },
+        None => request.body(MantalonBody::Empty).unwrap(),
+    };
     *request.headers_mut() = headers;
 
     // Get content edit

@@ -8,6 +8,7 @@ use web_sys::*;
 use bytes::Bytes;
 use http_body_util::{BodyExt, Empty};
 use hyper::{body::{Body, Incoming}, client::conn};
+use http_body_util::Either as EitherBody;
 
 use crate::compat::TokioIo;
 
@@ -19,6 +20,8 @@ mod pool;
 use pool::*;
 mod manifest;
 use manifest::*;
+mod body;
+pub use body::*;
 
 #[macro_export]
 macro_rules! log {
@@ -66,7 +69,7 @@ pub async fn read_body(mut body: Incoming) -> Option<Vec<u8>> {
     Some(body_bytes)
 }
 
-pub async fn proxied_fetch(request: http::Request<Empty<Bytes>>) -> Result<http::Response<Incoming>, SendRequestError> {
+pub async fn proxied_fetch(request: http::Request<MantalonBody>) -> Result<http::Response<Incoming>, SendRequestError> {
     debug!("Request: {request:?}");
 
     let response = POOL.send_request(request).await.map_err(|e| {
