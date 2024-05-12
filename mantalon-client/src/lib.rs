@@ -66,10 +66,7 @@ pub async fn read_entire_body(mut body: Incoming) -> Option<Vec<u8>> {
                 error!("Error reading chunk: {:?}", err);
                 return None;
             },
-            None => {
-                debug!("Unexpected end of stream");
-                break;
-            }
+            None => break,
         }
     }
     Some(body_bytes)

@@ -57,14 +57,13 @@ fn from_headers(value: JsValue) -> http::HeaderMap::<http::HeaderValue> {
     headers
 }
 
-pub fn get_content_edit(request: &http::Request<MantalonBody>) -> (usize, &'static ParsedContentEdit) {
-    let url = Url::parse(&request.uri().to_string()).unwrap();
+pub fn get_content_edit(request: &http::Request<MantalonBody>) -> Option<(usize, &'static ParsedContentEdit)> {
+    let url = Url::parse(&request.uri().to_string()).ok()?;
     let pattern_match_input = UrlPatternMatchInput::Url(url);
     MANIFEST.content_edits
         .iter()
         .enumerate()
         .find(|(_, ce)| ce.matches.iter().any(|pattern| pattern.test(pattern_match_input.clone()).unwrap_or_default()))
-        .unwrap() // There is always a wildcard match
 }
 
 /// Tries to replicate [fetch](https://developer.mozilla.org/en-US/docs/Web/API/fetch)
@@ -145,18 +144,42 @@ pub async fn proxiedFetch(ressource: JsValue, options: JsValue) -> Result<JsValu
         .method(method)
         .uri(uri.clone());
     let mut request = match body {
-        Some(body) => request.body(body).unwrap(),
-        None => request.body(MantalonBody::Empty).unwrap(),
+        Some(body) => match request.body(body) {
+            Ok(request) => request,
+            Err(e) => {
+                error!("Error setting body: {e:?}");
+                return Err(JsValue::from_str("Error setting body"));
+            },
+        }
+        None => match request.body(MantalonBody::Empty) {
+            Ok(request) => request,
+            Err(e) => {
+                error!("Error setting body: {e:?}");
+                return Err(JsValue::from_str("Error setting body"));
+            },
+        },
     };
     *request.headers_mut() = headers;
 
     // Get content edit
-    let (i, mut content_edit) = get_content_edit(&request); // There is always a wildcard match
-    debug!("Using content edit {i} for {uri}");
+    let (i, mut content_edit) = match get_content_edit(&request) {
+        Some(ce) => ce,
+        None => {
+            error!("No content edit found for {uri}");
+            return Err(JsValue::from_str("No content edit found"));
+        },
+    };
+    debug!("Using content edit {i} for {uri} request");
 
     // Apply edit on request
     content_edit.apply_on_request(&mut request);
-    content_edit = get_content_edit(&request).1;
+    content_edit = match get_content_edit(&request) {
+        Some(ce) => ce.1,
+        None => {
+            error!("No content edit found for {uri}");
+            return Err(JsValue::from_str("No content edit found"));
+        },
+    };
 
     // Add host header
     if let Some(authority) = uri.authority() {
@@ -179,17 +202,30 @@ pub async fn proxiedFetch(ressource: JsValue, options: JsValue) -> Result<JsValu
     init.status(response.status().as_u16());
     let headers = Headers::new()?;
     for (name, value) in response.headers() {
-        headers.append(name.as_str(), value.to_str().unwrap())?;
+        let value = match value.to_str() {
+            Ok(value) => value,
+            Err(e) => {
+                error!("Error converting header value: {e}");
+                continue;
+            },
+        };
+        headers.append(name.as_str(), value)?;
     }
     init.headers(&headers);
     
     // Handle the response body
     let body = response.into_body();
     if content_edit.needs_body_response() {
-        let mut body = read_entire_body(body).await.unwrap_or_default(); // FIXME: handle error
+        let mut body = read_entire_body(body).await.ok_or(JsValue::from_str("Error reading body"))?;
         content_edit.apply_on_response_body(&mut body).await;
-        let js_response = Response::new_with_opt_u8_array_and_init(Some(&mut body), &init)?;
-        return Ok(js_response.into());
+        
+        match Response::new_with_opt_u8_array_and_init(Some(&mut body), &init) {
+            Ok(js_response) => Ok(js_response.into()),
+            Err(e) => {
+                error!("Error creating response: {e:?}");
+                Err(e)
+            },
+        }
     } else {
         let underlying_source = Object::new();
 
@@ -221,18 +257,23 @@ pub async fn proxiedFetch(ressource: JsValue, options: JsValue) -> Result<JsValu
                 Ok(JsValue::undefined())
             })
         }) as Box<dyn FnMut(ReadableStreamDefaultController) -> Promise>);
-        Reflect::set(&underlying_source, &JsValue::from_str("pull"), pull.as_ref()).unwrap();
+        Reflect::set(&underlying_source, &JsValue::from_str("pull"), pull.as_ref())?;
         let mut pull = Some(pull);
 
         let cancel = Closure::wrap(Box::new(move |_| {
             pull.take(); // Taking the closure and not doing anything with it will drop it
         }) as Box<dyn FnMut(ReadableStreamDefaultController)>);
-        Reflect::set(&underlying_source, &JsValue::from_str("cancel"), cancel.as_ref()).unwrap();
+        Reflect::set(&underlying_source, &JsValue::from_str("cancel"), cancel.as_ref())?;
         cancel.forget(); // FIXME
 
-        let readable_stream = ReadableStream::new_with_underlying_source(&underlying_source).unwrap();
-        let js_response = Response::new_with_opt_readable_stream_and_init(Some(&readable_stream), &init)?;
-        return Ok(js_response.into());
+        let readable_stream = ReadableStream::new_with_underlying_source(&underlying_source)?;
+        match Response::new_with_opt_readable_stream_and_init(Some(&readable_stream), &init) {
+            Ok(js_response) => Ok(js_response.into()),
+            Err(e) => {
+                error!("Error creating streaming response: {e:?}");
+                Err(e)
+            },
+        }
     }
 }
 
