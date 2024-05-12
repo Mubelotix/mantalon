@@ -65,20 +65,17 @@ impl CookieStore {
         for cookie_header in response.headers().get_all("set-cookie") {
             let cookie_header = match cookie_header.to_str() {
                 Ok(s) => s,
-                Err(_) => {
-                    error!("Invalid cookie header");
+                Err(e) => {
+                    error!("Invalid cookie header: {e}");
                     continue;
                 }
             };
-            let new_cookies = Cookie::split_parse_encoded(cookie_header);
-            for cookie in new_cookies {
-                match cookie {
-                    Ok(cookie) => cookies.add(cookie.into_owned()),
-                    Err(e) => {
-                        error!("Error parsing cookie: {e}");
-                        continue;
-                    },
-                }
+            match Cookie::parse_encoded(cookie_header) {
+                Ok(cookie) => cookies.add(cookie.into_owned()),
+                Err(e) => {
+                    error!("Error parsing cookie in {cookie_header:?}: {e}");
+                    continue;
+                },
             }
         }
 
