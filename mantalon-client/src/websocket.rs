@@ -182,6 +182,6 @@ impl Drop for WrappedWebSocket {
         self.ws.set_onerror(None);
         self.ws.set_onmessage(None);
         self.ws.set_onopen(None);
-        self.ws.close().unwrap();
+        let _ = self.ws.close();
     }
 }

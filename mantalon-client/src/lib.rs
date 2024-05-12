@@ -5,11 +5,8 @@ use tokio_rustls::{rustls::{pki_types::{ServerName, IpAddr as RustlsIpAddr}, Cli
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::*;
 use web_sys::*;
-use bytes::Bytes;
-use http_body_util::{BodyExt, Empty};
+use http_body_util::BodyExt;
 use hyper::{body::{Body, Incoming}, client::conn};
-use http_body_util::Either as EitherBody;
-
 use crate::compat::TokioIo;
 
 mod compat;

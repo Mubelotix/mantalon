@@ -118,6 +118,21 @@ fn replace_in_vec(data: &mut Vec<u8>, pattern: &String, replacement: &String, ma
     }
 }
 
+async fn load_replacement_file(replacement_file: String) -> Result<String, JsValue> {
+    let replacement_url = format!("pkg/config/{replacement_file}");
+    let promise = window().map(|w| w.fetch_with_str(&replacement_url))
+        .or_else(|| js_sys::global().dyn_into::<ServiceWorkerGlobalScope>().ok().map(|sw| sw.fetch_with_str(&replacement_url)))
+        .ok_or(JsValue::from_str("No window or worker location"))?;
+    let future = JsFuture::from(promise);
+    let response = future.await?;
+    let response = response.dyn_into::<web_sys::Response>()?;
+    let promise = response.text()?;
+    let future = JsFuture::from(promise);
+    let text = future.await?;
+    let text = text.as_string().expect("response text should be string");
+    Ok(text)
+}
+
 impl ParsedContentEdit {
     pub fn apply_on_request(&self, request: &mut http::Request<MantalonBody>) {
         if let Some(override_url) = &self.override_uri {
@@ -126,7 +141,7 @@ impl ParsedContentEdit {
         if self.https_only && request.uri().scheme_str() != Some("https") {
             let mut parts = request.uri().clone().into_parts();
             parts.scheme = Some(http::uri::Scheme::HTTPS);
-            *request.uri_mut() = Uri::from_parts(parts).unwrap();
+            *request.uri_mut() = Uri::from_parts(parts).expect("we just changed the scheme")
         }
         
         for header in &self.remove_request_headers {
@@ -230,19 +245,18 @@ impl ParsedContentEdit {
             let pattern = &substitution.pattern;
             let replacement = match &substitution.replacement {
                 Some(replacement) => replacement.clone(),
-                None => {
-                    let replacement_file = substitution.replacement_file.clone().unwrap(); // TODO ensure existence
-                    let replacement_url = format!("pkg/config/{replacement_file}");
-                    let promise = window().map(|w| w.fetch_with_str(&replacement_url))
-                        .or_else(|| js_sys::global().dyn_into::<ServiceWorkerGlobalScope>().ok().map(|sw| sw.fetch_with_str(&replacement_url)))
-                        .unwrap();
-                    let future = JsFuture::from(promise);
-                    let response = future.await.unwrap();
-                    let response = response.dyn_into::<web_sys::Response>().unwrap();
-                    let promise = response.text().unwrap();
-                    let future = JsFuture::from(promise);
-                    let text = future.await.unwrap();
-                    text.as_string().unwrap()
+                None => match substitution.replacement_file.clone() {
+                    Some(replacement_file) => match load_replacement_file(replacement_file).await {
+                        Ok(replacement) => replacement,
+                        Err(e) => {
+                            error!("Error loading replacement file: {:?}", e);
+                            continue;
+                        }
+                    },
+                    None => {
+                        error!("Substitution has neither replacement nor replacement_file");
+                        continue;
+                    }
                 }
             };
             let max_replacements = substitution.max_replacements.unwrap_or(usize::MAX);
@@ -354,7 +368,7 @@ pub async fn update_manifest() -> Result<(), UpdateManifestError> {
         for pattern in edit.matches {
             if pattern == "*" {
                 let pattern_init = UrlPatternInit::default();
-                let pattern = UrlPattern::parse(pattern_init).unwrap();
+                let pattern = UrlPattern::parse(pattern_init).expect("* is a valid pattern");
                 matches.push(pattern);
                 continue;
             }
