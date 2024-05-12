@@ -1,8 +1,6 @@
-use std::{collections::HashMap, f64::consts::E, future::Future, hash::Hash, io::Error as IoError, rc::Rc};
-use bytes::Bytes;
-use cookie::{Cookie, CookieJar};
-use http::{uri, Request, Response, Uri};
-use hyper::{client::conn::http2::SendRequest, rt::bounds::Http2ClientConnExec};
+use std::{collections::HashMap, future::Future, io::Error as IoError, rc::Rc};
+use http::{Request, Response, Uri};
+use hyper::client::conn::http2::SendRequest;
 use tokio::sync::RwLock;
 use tokio_rustls::rustls::pki_types::InvalidDnsNameError;
 use crate::*;
@@ -10,13 +8,37 @@ use lazy_static::lazy_static;
 use tokio::sync::Mutex;
 
 lazy_static!{
-    pub static ref POOL: Pool = Pool::default();
+    pub static ref POOL: Pool = {
+        let self_ws_origin = window().map(|w| w.location()).and_then(|l| {
+                let host = l.host().ok()?;
+                let protocol = l.protocol().ok()?;
+                match protocol.as_str() {
+                    "http:" => Some(format!("ws://{}", host)),
+                    "https:" => Some(format!("wss://{}", host)),
+                    _ => None,
+                }
+            })
+            .or_else(|| js_sys::global().dyn_into::<WorkerGlobalScope>().ok().map(|d| d.location()).and_then(|l| {
+                let host = l.host();
+                let protocol = l.protocol();
+                match protocol.as_str() {
+                    "http:" => Some(format!("ws://{}", host)),
+                    "https:" => Some(format!("wss://{}", host)),
+                    _ => None,
+                }
+            }))
+            .expect("No window or worker location");
+        Pool {
+            connections: Default::default(),
+            self_ws_origin,
+        }
+    };
 }
 
-#[derive(Default)]
+#[allow(clippy::type_complexity)]
 pub struct Pool {
-    #[allow(clippy::type_complexity)]
-    connections: Rc<RwLock<HashMap<String, Rc<Mutex<SendRequest<MantalonBody>>>>>>
+    connections: Rc<RwLock<HashMap<String, Rc<Mutex<SendRequest<MantalonBody>>>>>>,
+    self_ws_origin: String,
 }
 
 unsafe impl Send for Pool {}
@@ -118,7 +140,7 @@ impl Pool {
                 debug!("Opening connection to {}", multiaddr);
 
                 // Open the websocket
-                let ws_url = format!("ws://localhost:8000/mantalon-connect/{}", multiaddr);
+                let ws_url = format!("{}/mantalon-connect/{}", self.self_ws_origin, multiaddr);
                 let connections2 = Rc::clone(&self.connections);
                 let multiaddr2 = multiaddr.clone();
                 let on_close = || spawn_local(async move { connections2.write().await.remove(&multiaddr2); });

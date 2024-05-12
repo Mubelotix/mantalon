@@ -10,8 +10,8 @@ function controlledUrl(url, navigate) {
             newUrl.searchParams.set('mantalon-protocol', newUrl.protocol);
             newUrl.searchParams.set('mantalon-host', newUrl.host);
             newUrl.searchParams.set('mantalon-navigate', navigate);
-            newUrl.protocol = "http:";
-            newUrl.host = "localhost:8000";
+            newUrl.protocol = window.location.protocol;
+            newUrl.host = window.location.host;
             return newUrl;
         } else {
             return url;

@@ -36,6 +36,7 @@ features = [
     "console",
     "Window",
     "ServiceWorkerGlobalScope",
+    "WorkerGlobalScope",
     "WebSocket",
     "MessageEvent",
     "Blob",
@@ -49,4 +50,6 @@ features = [
     "ReadableStream",
     "ReadableStreamDefaultReader",
     "ReadableStreamDefaultController",
+    "Location",
+    "WorkerLocation",
 ]
