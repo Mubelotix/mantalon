@@ -137,7 +137,9 @@ impl Pool {
                     let connector = TlsConnector::from(Arc::new(config));
                     let stream = connector.connect(server_name, websocket).await.map_err(SendRequestError::TlsConnect)?;
                     let stream = TokioIo::new(stream);
-                    let (request_sender, connection) = conn::http2::handshake(WasmExecutor, stream).await.map_err(SendRequestError::HttpHandshake)?;
+                    let (request_sender, connection) = conn::http2::Builder::new(WasmExecutor)
+                        .max_concurrent_reset_streams(0)
+                        .handshake(stream).await.map_err(SendRequestError::HttpHandshake)?;
                 
                     // Spawn a task to poll the connection and drive the HTTP state
                     spawn_local(async move {

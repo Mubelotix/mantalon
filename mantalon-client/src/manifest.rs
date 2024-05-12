@@ -1,6 +1,6 @@
 use std::{cell::UnsafeCell, collections::{HashMap, HashSet}, ops::Deref};
 use crate::*;
-use http::{uri::InvalidUri, HeaderName, HeaderValue, Uri};
+use http::{uri::{InvalidUri, Parts}, HeaderName, HeaderValue, Uri};
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use url::Url;
@@ -95,6 +95,152 @@ pub struct ParsedContentEdit {
     pub append_request_headers: HashMap<HeaderName, HeaderValue>,
     pub insert_request_headers: HashMap<HeaderName, HeaderValue>,
     pub remove_request_headers: HashSet<HeaderName>,
+}
+
+fn search_haystack<T: PartialEq>(needle: &[T], haystack: &[T]) -> Option<usize> {
+    if needle.is_empty() {
+        return Some(0);
+    }
+
+    haystack.windows(needle.len()).position(|subslice| subslice == needle)
+}
+
+fn replace_in_vec(data: &mut Vec<u8>, pattern: &String, replacement: &String, max_replacements: usize) {
+    let mut idx_start = 0;
+    let mut i = 0;
+    while let Some(idx) = search_haystack(pattern.as_bytes(), &data[idx_start..]) {
+        data.splice(idx_start+idx..idx_start+idx+pattern.len(), replacement.as_bytes().iter().copied());
+        idx_start += idx + replacement.len();
+        i += 1;
+        if i >= max_replacements {
+            break;
+        }
+    }
+}
+
+impl ParsedContentEdit {
+    pub fn apply_on_request(&self, request: &mut http::Request<MantalonBody>) {
+        if let Some(override_url) = &self.override_uri {
+            *request.uri_mut() = override_url.clone(); // FIXME: we might not need to proxy this then
+        }
+        if self.https_only && request.uri().scheme_str() != Some("https") {
+            let mut parts = request.uri().clone().into_parts();
+            parts.scheme = Some(http::uri::Scheme::HTTPS);
+            *request.uri_mut() = Uri::from_parts(parts).unwrap();
+        }
+        
+        for header in &self.remove_request_headers {
+            request.headers_mut().remove(header);
+        }
+        for header in &self.insert_request_headers {
+            request.headers_mut().insert(header.0.clone(), header.1.clone());
+        }
+        for header in &self.append_request_headers {
+            request.headers_mut().append(header.0.clone(), header.1.clone());
+        }
+    }
+    
+    pub fn apply_on_response(&self, response: &mut http::Response<Incoming>) {
+        // Prevent page from redirecting outside of the proxy
+        if self.rewrite_location {
+            if let Some(location) = response.headers().get("location").and_then(|l| l.to_str().ok()).and_then(|l| l.parse::<Uri>().ok()) {
+                if let Some(authority) = location.authority() {
+                    if MANIFEST.domains.iter().any(|d| authority.host() == d) { // TODO: use authority instead of host
+                        let mut parts = Parts::default();
+                        parts.scheme = Some(http::uri::Scheme::HTTP);
+                        parts.authority = Some("localhost:8000".parse().unwrap()); // TODO: Unhardcode
+                        parts.path_and_query = location.path_and_query().cloned();
+                        let uri = Uri::from_parts(parts).unwrap();
+                        response.headers_mut().insert("location", uri.to_string().parse().unwrap());
+                        response.headers_mut().insert("x-mantalon-location", location.to_string().parse().unwrap());
+                    }
+                }
+            }
+        }
+    
+        for header in &self.remove_headers {
+            response.headers_mut().remove(header);
+        }
+        for header in &self.insert_headers {
+            response.headers_mut().insert(header.0.clone(), header.1.clone());
+        }
+        for header in &self.append_headers {
+            response.headers_mut().append(header.0.clone(), header.1.clone());
+        }
+    }
+
+    pub fn needs_body_response(&self) -> bool {
+        self.lock_browsing || !self.js.is_empty() || !self.css.is_empty() || !self.substitute.is_empty()
+    }
+
+    pub async fn apply_on_response_body(&self, body: &mut Vec<u8>) {
+        // TODO: Implement filtering of content edits based on content-type
+        // let content_type = response.headers().get("content-type").and_then(|v| v.to_str().ok()).unwrap_or("unknown");
+        for js_path in &self.js {
+            // Only replace when the closing html tag is at the end (easy case)
+            if body.ends_with(b"</html>") {
+                let len = body.len();
+                body.truncate(len - 7);
+                body.extend_from_slice(format!("<script src=\"/pkg/config/{js_path}\"></script></html>").as_bytes());
+            } else {
+                error!("Parse DOM") // TODO: Parse DOM
+            }
+        }
+    
+        for css_path in &self.css {
+            // Only replace when only one closing head tag is present.
+            // Otherwise we don't know which is the right and which might be some XSS attack.
+            if let Some(idx) = search_haystack(b"</head>", body) {
+                if search_haystack(b"</head>", &body[idx+7..]).is_none() {
+                    body.splice(idx..idx+7, format!("<link rel=\"stylesheet\" href=\"/pkg/config/{css_path}\">").into_bytes().into_iter());
+                } else {
+                    error!("Parse DOM (css)") // TODO: Parse DOM
+                }
+            }
+        }
+
+        if self.lock_browsing {
+            // TODO: remove duplicated code
+            if body.ends_with(b"</html>") {
+                let len = body.len();
+                body.truncate(len - 7); 
+                let code = include_str!("../scripts/lock_browsing.js");
+                let code = code.replace("proxiedDomains", &MANIFEST.domains.iter().map(|d| format!("\"{d}\"")).collect::<Vec<_>>().join(","));
+                body.extend_from_slice(format!("<script>{code}</script></html>").as_bytes());
+            } else if body.ends_with(b"</html>\n") {
+                let len = body.len();
+                body.truncate(len - 8); 
+                let code = include_str!("../scripts/lock_browsing.js");
+                let code = code.replace("proxiedDomains", &MANIFEST.domains.iter().map(|d| format!("\"{d}\"")).collect::<Vec<_>>().join(","));
+                body.extend_from_slice(format!("<script>{code}</script></html>\n").as_bytes());
+            } else {
+                error!("Parse DOM (lock)") // TODO: Parse DOM
+            }
+        }
+        
+        for substitution in &self.substitute {
+            let pattern = &substitution.pattern;
+            let replacement = match &substitution.replacement {
+                Some(replacement) => replacement.clone(),
+                None => {
+                    let replacement_file = substitution.replacement_file.clone().unwrap(); // TODO ensure existence
+                    let replacement_url = format!("pkg/config/{replacement_file}");
+                    let promise = window().map(|w| w.fetch_with_str(&replacement_url))
+                        .or_else(|| js_sys::global().dyn_into::<ServiceWorkerGlobalScope>().ok().map(|sw| sw.fetch_with_str(&replacement_url)))
+                        .unwrap();
+                    let future = JsFuture::from(promise);
+                    let response = future.await.unwrap();
+                    let response = response.dyn_into::<web_sys::Response>().unwrap();
+                    let promise = response.text().unwrap();
+                    let future = JsFuture::from(promise);
+                    let text = future.await.unwrap();
+                    text.as_string().unwrap()
+                }
+            };
+            let max_replacements = substitution.max_replacements.unwrap_or(usize::MAX);
+            replace_in_vec(body, pattern, &replacement, max_replacements);
+        }
+    }
 }
 
 #[derive(Debug)]

@@ -47,4 +47,5 @@ features = [
     "Request",
     "ReadableStream",
     "ReadableStreamDefaultReader",
+    "ReadableStreamDefaultController",
 ]

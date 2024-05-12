@@ -44,7 +44,7 @@ macro_rules! debug {
     }
 }
 
-pub async fn read_body(mut body: Incoming) -> Option<Vec<u8>> {
+pub async fn read_entire_body(mut body: Incoming) -> Option<Vec<u8>> {
     let mut body_bytes = Vec::new();
     while !body.is_end_stream() {
         let chunk = body.frame().await;

@@ -1,8 +1,9 @@
 #![allow(non_snake_case)]
 
+use std::{cell::UnsafeCell, rc::Rc};
 use crate::*;
-use http::{uri::Parts, HeaderName, HeaderValue, Method, Uri};
-use js_sys::{Array, Function, Iterator, Map, Reflect::*};
+use http::{HeaderName, HeaderValue, Method, Uri};
+use js_sys::{Array, Function, Iterator, Map, Object, Promise, Reflect::{self, *}, Uint8Array};
 use url::Url;
 use urlpattern::UrlPatternMatchInput;
 use web_sys::Request;
@@ -56,33 +57,6 @@ fn from_headers(value: JsValue) -> http::HeaderMap::<http::HeaderValue> {
     headers
 }
 
-pub async fn complete_response(response: http::Response<Incoming>) -> http::Response<Vec<u8>> {
-    let (head, body) = response.into_parts();
-    let body = read_body(body).await;
-    http::Response::from_parts(head, body.unwrap_or_default())
-}
-
-fn search_haystack<T: PartialEq>(needle: &[T], haystack: &[T]) -> Option<usize> {
-    if needle.is_empty() {
-        return Some(0);
-    }
-
-    haystack.windows(needle.len()).position(|subslice| subslice == needle)
-}
-
-fn replace_in_vec(data: &mut Vec<u8>, pattern: &String, replacement: &String, max_replacements: usize) {
-    let mut idx_start = 0;
-    let mut i = 0;
-    while let Some(idx) = search_haystack(pattern.as_bytes(), &data[idx_start..]) {
-        data.splice(idx_start+idx..idx_start+idx+pattern.len(), replacement.as_bytes().iter().copied());
-        idx_start += idx + replacement.len();
-        i += 1;
-        if i >= max_replacements {
-            break;
-        }
-    }
-}
-
 pub fn get_content_edit(request: &http::Request<MantalonBody>) -> (usize, &'static ParsedContentEdit) {
     let url = Url::parse(&request.uri().to_string()).unwrap();
     let pattern_match_input = UrlPatternMatchInput::Url(url);
@@ -91,123 +65,6 @@ pub fn get_content_edit(request: &http::Request<MantalonBody>) -> (usize, &'stat
         .enumerate()
         .find(|(_, ce)| ce.matches.iter().any(|pattern| pattern.test(pattern_match_input.clone()).unwrap_or_default()))
         .unwrap() // There is always a wildcard match
-}
-
-pub async fn apply_edit_request(request: &mut http::Request<MantalonBody>, content_edit: &ParsedContentEdit) {
-    if let Some(override_url) = &content_edit.override_uri {
-        *request.uri_mut() = override_url.clone(); // FIXME: we might not need to proxy this then
-    }
-    if content_edit.https_only && request.uri().scheme_str() != Some("https") {
-        let mut parts = request.uri().clone().into_parts();
-        parts.scheme = Some(http::uri::Scheme::HTTPS);
-        *request.uri_mut() = Uri::from_parts(parts).unwrap();
-    }
-    for header in &content_edit.remove_request_headers {
-        request.headers_mut().remove(header);
-    }
-    for header in &content_edit.insert_request_headers {
-        request.headers_mut().insert(header.0.clone(), header.1.clone());
-    }
-    for header in &content_edit.append_request_headers {
-        request.headers_mut().append(header.0.clone(), header.1.clone());
-    }
-}
-
-pub async fn apply_edit_response(response: &mut http::Response<Vec<u8>>, content_edit: &ParsedContentEdit) {
-    // Prevent page from redirecting outside of the proxy
-    if content_edit.rewrite_location {
-        if let Some(location) = response.headers().get("location").and_then(|l| l.to_str().ok()).and_then(|l| l.parse::<Uri>().ok()) {
-            if let Some(authority) = location.authority() {
-                if MANIFEST.domains.iter().any(|d| authority.host() == d) { // TODO: use authority instead of host
-                    let mut parts = Parts::default();
-                    parts.scheme = Some(http::uri::Scheme::HTTP);
-                    parts.authority = Some("localhost:8000".parse().unwrap()); // TODO: Unhardcode
-                    parts.path_and_query = location.path_and_query().cloned();
-                    let uri = Uri::from_parts(parts).unwrap();
-                    response.headers_mut().insert("location", uri.to_string().parse().unwrap());
-                    response.headers_mut().insert("x-mantalon-location", location.to_string().parse().unwrap());
-                }
-            }
-        }
-    }
-
-    let content_type = response.headers().get("content-type").and_then(|v| v.to_str().ok()).unwrap_or("unknown");
-    if content_type == "text/html" || content_type.starts_with("text/html;") {
-        for js_path in &content_edit.js {
-            // Only replace when the closing html tag is at the end (easy case)
-            if response.body().ends_with(b"</html>") {
-                let len = response.body().len();
-                response.body_mut().truncate(len - 7);
-                response.body_mut().extend_from_slice(format!("<script src=\"/pkg/config/{js_path}\"></script></html>").as_bytes());
-            } else {
-                error!("Parse DOM") // TODO: Parse DOM
-            }
-        }
-    
-        for css_path in &content_edit.css {
-            // Only replace when only one closing head tag is present.
-            // Otherwise we don't know which is the right and which might be some XSS attack.
-            if let Some(idx) = search_haystack(b"</head>", response.body()) {
-                if search_haystack(b"</head>", &response.body()[idx+7..]).is_none() {
-                    response.body_mut().splice(idx..idx+7, format!("<link rel=\"stylesheet\" href=\"/pkg/config/{css_path}\">").into_bytes().into_iter());
-                } else {
-                    error!("Parse DOM (css)") // TODO: Parse DOM
-                }
-            }
-        }
-
-        if content_edit.lock_browsing {
-            // TODO: remove duplicated code
-            if response.body().ends_with(b"</html>") {
-                let len = response.body().len();
-                response.body_mut().truncate(len - 7); 
-                let code = include_str!("../scripts/lock_browsing.js");
-                let code = code.replace("proxiedDomains", &MANIFEST.domains.iter().map(|d| format!("\"{d}\"")).collect::<Vec<_>>().join(","));
-                response.body_mut().extend_from_slice(format!("<script>{code}</script></html>").as_bytes());
-            } else if response.body().ends_with(b"</html>\n") {
-                let len = response.body().len();
-                response.body_mut().truncate(len - 8); 
-                let code = include_str!("../scripts/lock_browsing.js");
-                let code = code.replace("proxiedDomains", &MANIFEST.domains.iter().map(|d| format!("\"{d}\"")).collect::<Vec<_>>().join(","));
-                response.body_mut().extend_from_slice(format!("<script>{code}</script></html>\n").as_bytes());
-            } else {
-                error!("Parse DOM (lock)") // TODO: Parse DOM
-            }
-        }
-    }
-    
-    for substitution in &content_edit.substitute {
-        let pattern = &substitution.pattern;
-        let replacement = match &substitution.replacement {
-            Some(replacement) => replacement.clone(),
-            None => {
-                let replacement_file = substitution.replacement_file.clone().unwrap(); // TODO ensure existence
-                let replacement_url = format!("pkg/config/{replacement_file}");
-                let promise = window().map(|w| w.fetch_with_str(&replacement_url))
-                    .or_else(|| js_sys::global().dyn_into::<ServiceWorkerGlobalScope>().ok().map(|sw| sw.fetch_with_str(&replacement_url)))
-                    .unwrap();
-                let future = JsFuture::from(promise);
-                let response = future.await.unwrap();
-                let response = response.dyn_into::<web_sys::Response>().unwrap();
-                let promise = response.text().unwrap();
-                let future = JsFuture::from(promise);
-                let text = future.await.unwrap();
-                text.as_string().unwrap()
-            }
-        };
-        let max_replacements = substitution.max_replacements.unwrap_or(usize::MAX);
-        replace_in_vec(response.body_mut(), pattern, &replacement, max_replacements);
-    }
-
-    for header in &content_edit.remove_headers {
-        response.headers_mut().remove(header);
-    }
-    for header in &content_edit.insert_headers {
-        response.headers_mut().insert(header.0.clone(), header.1.clone());
-    }
-    for header in &content_edit.append_headers {
-        response.headers_mut().append(header.0.clone(), header.1.clone());
-    }
 }
 
 /// Tries to replicate [fetch](https://developer.mozilla.org/en-US/docs/Web/API/fetch)
@@ -298,7 +155,7 @@ pub async fn proxiedFetch(ressource: JsValue, options: JsValue) -> Result<JsValu
     debug!("Using content edit {i} for {uri}");
 
     // Apply edit on request
-    apply_edit_request(&mut request, content_edit).await;
+    content_edit.apply_on_request(&mut request);
     content_edit = get_content_edit(&request).1;
 
     // Add host header
@@ -310,14 +167,14 @@ pub async fn proxiedFetch(ressource: JsValue, options: JsValue) -> Result<JsValu
 
     // Send request
     let mut response = match proxied_fetch(request).await {
-        Ok(response) => complete_response(response).await,
+        Ok(response) => response,
         Err(error) => return Err(JsValue::from_str(&error.to_string())),
     };
 
-    // Apply edit on response
-    apply_edit_response(&mut response, content_edit).await;
+    // Apply edit on response (without body)
+    content_edit.apply_on_response(&mut response);
 
-    // Convert response to JS
+    // Start converting response to JS
     let mut init = ResponseInit::new();
     init.status(response.status().as_u16());
     let headers = Headers::new()?;
@@ -325,10 +182,58 @@ pub async fn proxiedFetch(ressource: JsValue, options: JsValue) -> Result<JsValu
         headers.append(name.as_str(), value.to_str().unwrap())?;
     }
     init.headers(&headers);
-    let mut body = response.into_body();
-    let js_response = Response::new_with_opt_u8_array_and_init(Some(&mut body), &init)?;
+    
+    // Handle the response body
+    let body = response.into_body();
+    if content_edit.needs_body_response() {
+        let mut body = read_entire_body(body).await.unwrap_or_default(); // FIXME: handle error
+        content_edit.apply_on_response_body(&mut body).await;
+        let js_response = Response::new_with_opt_u8_array_and_init(Some(&mut body), &init)?;
+        return Ok(js_response.into());
+    } else {
+        let underlying_source = Object::new();
 
-    Ok(js_response.into())
+        let body = Rc::new(UnsafeCell::new(body));
+        let pull = Closure::wrap(Box::new(move |controller: ReadableStreamDefaultController| -> Promise {
+            let body2 = Rc::clone(&body);
+            future_to_promise(async move {
+                let body = unsafe { &mut *body2.get() }; // This is safe because the browser will never call pull twice at the same time
+                let chunk = body.frame().await;
+                match chunk {
+                    Some(Ok(chunk)) => match chunk.into_data() {
+                        Ok(data) => {
+                            let data = Uint8Array::from(data.as_ref());
+                            controller.enqueue_with_chunk(&data.into())?;
+                        },
+                        Err(e) => {
+                            error!("Received non-data frame: {:?}", e);
+                            return Err(JsValue::NULL);
+                        }
+                    },
+                    Some(Err(err)) => {
+                        error!("Error reading chunk: {:?}", err);
+                        return Err(JsValue::NULL);
+                    },
+                    None => {
+                        controller.close()?;
+                    },
+                }
+                Ok(JsValue::undefined())
+            })
+        }) as Box<dyn FnMut(ReadableStreamDefaultController) -> Promise>);
+        Reflect::set(&underlying_source, &JsValue::from_str("pull"), pull.as_ref()).unwrap();
+        let mut pull = Some(pull);
+
+        let cancel = Closure::wrap(Box::new(move |_| {
+            pull.take(); // Taking the closure and not doing anything with it will drop it
+        }) as Box<dyn FnMut(ReadableStreamDefaultController)>);
+        Reflect::set(&underlying_source, &JsValue::from_str("cancel"), cancel.as_ref()).unwrap();
+        cancel.forget(); // FIXME
+
+        let readable_stream = ReadableStream::new_with_underlying_source(&underlying_source).unwrap();
+        let js_response = Response::new_with_opt_readable_stream_and_init(Some(&readable_stream), &init)?;
+        return Ok(js_response.into());
+    }
 }
 
 #[wasm_bindgen]
