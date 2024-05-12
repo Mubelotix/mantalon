@@ -1,6 +1,7 @@
-use std::{collections::HashMap, future::Future, io::Error as IoError, rc::Rc};
+use std::{collections::HashMap, f64::consts::E, future::Future, hash::Hash, io::Error as IoError, rc::Rc};
 use bytes::Bytes;
-use http::{Request, Response, Uri};
+use cookie::{Cookie, CookieJar};
+use http::{uri, Request, Response, Uri};
 use hyper::{client::conn::http2::SendRequest, rt::bounds::Http2ClientConnExec};
 use tokio::sync::RwLock;
 use tokio_rustls::rustls::pki_types::InvalidDnsNameError;

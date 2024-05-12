@@ -24,6 +24,7 @@ serde-wasm-bindgen = "0.6.5"
 urlpattern = "0.2"
 regex = "1.10"
 url = "2.5"
+cookie = {version="0.18", features=["percent-encode"]}
 
 [target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
 ring = { version = "*", features = ["wasm32_unknown_unknown_js"] }

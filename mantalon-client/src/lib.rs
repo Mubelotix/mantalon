@@ -21,6 +21,8 @@ use pool::*;
 mod manifest;
 use manifest::*;
 mod body;
+mod cookies;
+pub use cookies::*;
 pub use body::*;
 
 #[macro_export]
@@ -68,6 +70,31 @@ pub async fn read_entire_body(mut body: Incoming) -> Option<Vec<u8>> {
     }
     Some(body_bytes)
 }
+
+pub async fn proxied_fetch_with_global_cookies(mut request: http::Request<MantalonBody>) -> Result<http::Response<Incoming>, SendRequestError> {
+    // Add cookies
+    let uri = request.uri().clone();
+    match GLOBAL_COOKIES.add_cookies(&mut request).await {
+        Ok(()) => (),
+        Err(e) => {
+            error!("Error adding cookies to request: {:?}", e);
+        }
+    }
+
+    // Send request
+    let response = proxied_fetch(request).await?;
+
+    // Store cookies
+    match GLOBAL_COOKIES.store_cookies(&uri, &response).await {
+        Ok(()) => (),
+        Err(e) => {
+            error!("Error storing cookies from response: {:?}", e);
+        }
+    }
+
+    Ok(response)
+}
+
 
 pub async fn proxied_fetch(request: http::Request<MantalonBody>) -> Result<http::Response<Incoming>, SendRequestError> {
     debug!("Request: {request:?}");
