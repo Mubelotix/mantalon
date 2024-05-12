@@ -1,5 +1,5 @@
 {
-    "domains": ["app.dev.insaplace.me"],
+    "domains": ["app.dev.insaplace.me", "events.insaplace.me", "api.dev.insaplace.me"],
     "https_only": false,
     "credentials": "same-origin",
     "content_edits": [

@@ -46,6 +46,10 @@ macro_rules! debug {
     }
 }
 
+pub fn now() -> i64 {
+    (js_sys::Date::new_0().get_time() / 1000.0) as i64
+}
+
 pub async fn read_entire_body(mut body: Incoming) -> Option<Vec<u8>> {
     let mut body_bytes = Vec::new();
     while !body.is_end_stream() {
