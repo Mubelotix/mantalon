@@ -43,19 +43,23 @@ struct Args {
     /// Will be served at /pkg/config
     #[arg(short, long)]
     config_path: Option<String>,
-}
 
+    /// The port to listen on.
+    #[arg(short, long, default_value = "8000")]
+    port: u16,
+}
 
 /// Start up a hyper server.
 #[tokio::main]
 async fn main() -> Result<(), BoxedError> {
-    let args = Args::parse();
+    let args = Box::new(Args::parse());
+    let args = Box::leak(args);
     env_logger::init();
 
-    let addr: SocketAddr = ([127, 0, 0, 1], 8000).into();
+    let addr: SocketAddr = ([127, 0, 0, 1], args.port).into();
     let listener = TcpListener::bind(addr).await?;
     let static_files = Static::new("mantalon-client");
-    let config_static_files = Static::new(args.config_path.unwrap_or_default());
+    let config_static_files = Static::new(args.config_path.clone().unwrap_or_default());
     let dns_cache = DnsCache::default();
 
     info!("Listening on http://{:?}", listener.local_addr().unwrap());
