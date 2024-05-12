@@ -8,37 +8,20 @@ use lazy_static::lazy_static;
 use tokio::sync::Mutex;
 
 lazy_static!{
-    pub static ref POOL: Pool = {
-        let self_ws_origin = window().map(|w| w.location()).and_then(|l| {
-                let host = l.host().ok()?;
-                let protocol = l.protocol().ok()?;
-                match protocol.as_str() {
-                    "http:" => Some(format!("ws://{}", host)),
-                    "https:" => Some(format!("wss://{}", host)),
-                    _ => None,
-                }
-            })
-            .or_else(|| js_sys::global().dyn_into::<WorkerGlobalScope>().ok().map(|d| d.location()).and_then(|l| {
-                let host = l.host();
-                let protocol = l.protocol();
-                match protocol.as_str() {
-                    "http:" => Some(format!("ws://{}", host)),
-                    "https:" => Some(format!("wss://{}", host)),
-                    _ => None,
-                }
-            }))
-            .expect("No window or worker location");
-        Pool {
-            connections: Default::default(),
-            self_ws_origin,
-        }
+    pub static ref POOL: Pool = Pool {
+        connections: Default::default(),
+    };
+
+    pub static ref SELF_ORIGIN: String = {
+        window().map(|w| w.location()).and_then(|l| l.origin().ok())
+            .or_else(|| js_sys::global().dyn_into::<WorkerGlobalScope>().ok().map(|d| d.location()).map(|l| l.origin()))
+            .expect("No window or worker location")
     };
 }
 
 #[allow(clippy::type_complexity)]
 pub struct Pool {
     connections: Rc<RwLock<HashMap<String, Rc<Mutex<SendRequest<MantalonBody>>>>>>,
-    self_ws_origin: String,
 }
 
 unsafe impl Send for Pool {}
@@ -140,7 +123,10 @@ impl Pool {
                 debug!("Opening connection to {}", multiaddr);
 
                 // Open the websocket
-                let ws_url = format!("{}/mantalon-connect/{}", self.self_ws_origin, multiaddr);
+                let ws_url = match SELF_ORIGIN.starts_with("https://") {
+                    true => format!("wss://{}/mantalon-connect/{}", SELF_ORIGIN.trim_start_matches("https://"), multiaddr),
+                    false => format!("ws://{}/mantalon-connect/{}", SELF_ORIGIN.trim_start_matches("http://"), multiaddr),
+                };
                 let connections2 = Rc::clone(&self.connections);
                 let multiaddr2 = multiaddr.clone();
                 let on_close = || spawn_local(async move { connections2.write().await.remove(&multiaddr2); });

@@ -147,8 +147,16 @@ impl ParsedContentEdit {
                 if let Some(authority) = location.authority() {
                     if MANIFEST.domains.iter().any(|d| authority.host() == d) { // TODO: use authority instead of host
                         let mut parts = Parts::default();
-                        parts.scheme = Some(http::uri::Scheme::HTTP);
-                        parts.authority = Some("localhost:8000".parse().unwrap()); // TODO: Unhardcode
+                        match SELF_ORIGIN.starts_with("https://") {
+                            true => {
+                                parts.scheme = Some(http::uri::Scheme::HTTPS);
+                                parts.authority = Some(SELF_ORIGIN.trim_start_matches("https://").parse().unwrap());
+                            },
+                            false => {
+                                parts.scheme = Some(http::uri::Scheme::HTTP);
+                                parts.authority = Some(SELF_ORIGIN.trim_start_matches("http://").parse().unwrap());
+                            }
+                        }
                         parts.path_and_query = location.path_and_query().cloned();
                         let uri = Uri::from_parts(parts).unwrap();
                         response.headers_mut().insert("location", uri.to_string().parse().unwrap());
