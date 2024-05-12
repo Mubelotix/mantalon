@@ -93,7 +93,6 @@ pub async fn proxied_fetch_with_global_cookies(mut request: http::Request<Mantal
     Ok(response)
 }
 
-
 pub async fn proxied_fetch(request: http::Request<MantalonBody>) -> Result<http::Response<Incoming>, SendRequestError> {
     debug!("Request: {request:?}");
 

@@ -6,7 +6,7 @@
             "command": "sh",
             "args": [
                 "-c",
-                "cd mantalon-client && wasm-pack build --target=web --dev"
+                "cd mantalon-client && wasm-pack build --target=no-modules --dev"
             ],
             "type": "shell",
             "problemMatcher": [],

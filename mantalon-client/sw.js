@@ -73,9 +73,10 @@ self.addEventListener("fetch", (event) => {
 });
 
 // Load Mantalon library
-import initWasm, { init, proxiedFetch, getProxiedDomains } from '/pkg/mantalon_client.js';
+importScripts("/pkg/mantalon_client.js");
+const { init, proxiedFetch, getProxiedDomains } = wasm_bindgen;
 async function run() {
-    await initWasm();
+    await wasm_bindgen("/pkg/mantalon_client_bg.wasm");
     await init();
     self.proxiedFetch = proxiedFetch;
     self.proxiedDomains = getProxiedDomains();
