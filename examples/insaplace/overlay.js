@@ -75,6 +75,15 @@ class MasterController {
 
     }
 
+    _checkCanPlace() {
+        return this._controller.timerElement.classList.contains("hidden");
+    }
+
+    _playSound() {
+        const audio = new Audio("https://assets.mixkit.co/active_storage/sfx/600/600.wav");
+        audio.play();   
+    }
+
     constructor(controller) {
         this._controller = controller;
         this.overlayCanvas = this._controller._createCanvas();
@@ -107,6 +116,15 @@ class MasterController {
             }
         }
         
+        this.observer = new MutationObserver((mutationsList, observer) => {
+            if (this._checkCanPlace()) {
+                this._playSound();
+            }
+        });
+
+        this.observer.observe(this._controller.timerElement, { attributes : true, attributeFilter : ['class'] });
+
+
         document.querySelector(".border-t :last-child").appendChild(this.enableInput);
     }
  }
