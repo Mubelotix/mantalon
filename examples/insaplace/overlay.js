@@ -85,7 +85,7 @@ class MasterController {
 
         this.overlay = new Image()
         this.overlay.crossOrigin = "Anonymous";
-        this.overlay.src = "https://cdn.discordapp.com/attachments/878264604365574144/1239638340760895498/fotor-20240513195927.png?ex=6643a6ab&is=6642552b&hm=344bc5d70ab66563ec6fa3ab126b1d838902dbd2c232d7bf119ed1fe618e726d&"
+        this.overlay.src = "https://raw.githubusercontent.com/INSAgenda/pixel-war/main/overlay.png"
         
         this.overlay.onload = this._drawOverlay.bind(this);
         // Change opacity input
