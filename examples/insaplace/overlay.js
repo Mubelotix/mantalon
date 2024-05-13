@@ -84,6 +84,27 @@ class MasterController {
         audio.play();   
     }
 
+    _postMessage(message) {
+        window.parent.postMessage(message, "https://insagenda.fr/");
+        window.parent.postMessage(message, "https://dev.insagenda.fr/");
+        window.parent.postMessage(message, "http://localhost:8088/");
+        
+    }
+
+    _onMessage(event) {
+        console.log(event);
+        if (event.data.ty === "getSatus") {
+            this._sendSatus();
+        }
+    }
+
+    _sendSatus() {
+        this._postMessage({
+            ty: "canPlace",
+            data: this._checkCanPlace()
+        })
+    }
+
     constructor(controller) {
         this._controller = controller;
         this.overlayCanvas = this._controller._createCanvas();
@@ -119,6 +140,7 @@ class MasterController {
         this.observerTimer = new MutationObserver((mutationsList, observer) => {
             if (this._checkCanPlace()) {
                 this._playSound();
+                this._sendSatus();
             }
         });
 
@@ -142,6 +164,8 @@ class MasterController {
             this._controller.selectedColor = selectedColor;
         }
         document.querySelector(".border-t :last-child").appendChild(this.enableInput);
+
+        window.addEventListener("message", this._onMessage.bind(this));
     }
  }
 
