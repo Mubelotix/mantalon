@@ -199,6 +199,9 @@ impl ParsedContentEdit {
     pub async fn apply_on_response_body(&self, body: &mut Vec<u8>) {
         // TODO: Implement filtering of content edits based on content-type
         // let content_type = response.headers().get("content-type").and_then(|v| v.to_str().ok()).unwrap_or("unknown");
+        while body.ends_with(b"\n") {
+            body.pop();
+        }
         for js_path in &self.js {
             // Only replace when the closing html tag is at the end (easy case)
             if body.ends_with(b"</html>") {
