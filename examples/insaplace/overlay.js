@@ -116,15 +116,31 @@ class MasterController {
             }
         }
         
-        this.observer = new MutationObserver((mutationsList, observer) => {
+        this.observerTimer = new MutationObserver((mutationsList, observer) => {
             if (this._checkCanPlace()) {
                 this._playSound();
             }
         });
 
-        this.observer.observe(this._controller.timerElement, { attributes : true, attributeFilter : ['class'] });
+        this.observerTimer.observe(this._controller.timerElement, { attributes : true, attributeFilter : ['class'] });
 
+        this.observerPixelColor = new MutationObserver((mutationsList, observer) => {
+            for (let mutation of mutationsList) {
+                if (mutation.attributeName !== 'style') {
+                    continue;
+                }
+                
+                window.localStorage.setItem("color", this._controller.selectedColor)
+            }
+        });
+        console.log(this._controller.buttonColorSelectorElement);
+        this.observerPixelColor.observe(this._controller.buttonColorSelectorElement, { attributes: true, attributeFilter: ['style'] });
 
+        const selectedColor = parseInt(window.localStorage.getItem("color"));
+        if (selectedColor) {
+            this._controller.buttonColorSelectorElement.style.color = this._controller._toHexColor(selectedColor);
+            this._controller.selectedColor = selectedColor;
+        }
         document.querySelector(".border-t :last-child").appendChild(this.enableInput);
     }
  }
