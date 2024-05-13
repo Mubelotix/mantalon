@@ -218,7 +218,7 @@ pub async fn proxiedFetch(ressource: JsValue, options: JsValue) -> Result<JsValu
     if content_edit.needs_body_response() {
         let mut body = read_entire_body(body).await.ok_or(JsValue::from_str("Error reading body"))?;
         content_edit.apply_on_response_body(&mut body).await;
-        
+
         match Response::new_with_opt_u8_array_and_init(Some(&mut body), &init) {
             Ok(js_response) => Ok(js_response.into()),
             Err(e) => {
@@ -303,6 +303,7 @@ pub async fn init() {
     }));
 
     update_manifest().await.expect("Error updating manifest");
+    open_cookie_storage().await;
 
     debug!("Proxy library ready. Proxying {}", MANIFEST.domains.join(", "));
 }

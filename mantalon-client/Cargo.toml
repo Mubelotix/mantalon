@@ -52,4 +52,6 @@ features = [
     "ReadableStreamDefaultController",
     "Location",
     "WorkerLocation",
+    "CacheStorage",
+    "Cache",
 ]

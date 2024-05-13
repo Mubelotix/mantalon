@@ -6,16 +6,56 @@ use crate::*;
 use lazy_static::lazy_static;
 
 lazy_static!{
-    pub static ref GLOBAL_COOKIES: CookieStore = CookieStore::default(); // TODO restore cookies from storage
+    pub static ref GLOBAL_COOKIES: CookieStore = {
+        CookieStore {
+            cookies: Rc::new(RwLock::new(CookieJar::new())),
+            cache_storagage: Rc::new(RwLock::new(None)),
+        }
+    };
 }
 
 #[derive(Default)]
 pub struct CookieStore {
     cookies: Rc<RwLock<CookieJar>>,
+    cache_storagage: Rc<RwLock<Option<Cache>>>,
 }
 
 unsafe impl Send for CookieStore {} // Safe on wasm
 unsafe impl Sync for CookieStore {} // Safe on wasm
+
+pub async fn open_cookie_storage() {
+    let global = match js_sys::global().dyn_into::<WorkerGlobalScope>() {
+        Ok(global) => global,
+        Err(_) => {
+            error!("No global service worker scope");
+            return;
+        }
+    };
+    let caches = match global.caches() {
+        Ok(caches) => caches,
+        Err(_) => {
+            error!("No caches object");
+            return;
+        }
+    };
+    let cache_promise = caches.open("mantalon-cookies");
+    let cache_fut = JsFuture::from(cache_promise);
+    let cache = match cache_fut.await {
+        Ok(cache) => cache,
+        Err(_) => {
+            error!("Error opening cache");
+            return;
+        }
+    };
+    let cache = match cache.dyn_into::<Cache>() {
+        Ok(cache) => cache,
+        Err(_) => {
+            error!("Error casting cache");
+            return;
+        }
+    };
+    GLOBAL_COOKIES.on_storage_opened(cache).await;
+}
 
 #[derive(Debug)]
 pub enum CookieError {
@@ -66,6 +106,7 @@ impl CookieStore {
         let request_domain = uri.host().ok_or(CookieError::NoOrigin)?;
         let mut cookies = self.cookies.write().await;
 
+        let mut changed = false;
         for cookie_header in response.headers().get_all("set-cookie") {
             let cookie_header = match cookie_header.to_str() {
                 Ok(s) => s,
@@ -87,10 +128,102 @@ impl CookieStore {
                     continue;
                 }
             }
-            cookies.add(cookie.into_owned())
+            cookies.add(cookie.into_owned());
+            changed = true;
+        }
+
+        if changed {
+            spawn_local(async move { // TODO: using global not logical
+                GLOBAL_COOKIES.save().await;
+            });
         }
 
         Ok(())
+    }
+
+    pub async fn on_storage_opened(&self, cache: Cache) {
+        self.cache_storagage.write().await.replace(cache.clone());
+
+        let match_promise = cache.match_with_str("cookies");
+        let match_fut = JsFuture::from(match_promise);
+        let match_result = match match_fut.await {
+            Ok(match_result) => match_result,
+            Err(_) => {
+                error!("Error matching cache");
+                return;
+            }
+        };
+        let match_response = match match_result.dyn_into::<web_sys::Response>() {
+            Ok(match_response) => match_response,
+            Err(_) => {
+                error!("Error casting match response");
+                return;
+            }
+        };
+        let match_text_promise = match match_response.text() {
+            Ok(match_text_promise) => match_text_promise,
+            Err(_) => {
+                error!("Error getting text promise from match response");
+                return;
+            }
+        };
+        let match_text_fut = JsFuture::from(match_text_promise);
+        let match_text = match match_text_fut.await {
+            Ok(match_text) => match_text,
+            Err(_) => {
+                error!("Error getting text from match response");
+                return;
+            }
+        };
+        let match_text = match match_text.as_string() {
+            Some(match_text) => match_text,
+            None => {
+                error!("Error getting string from match response");
+                return;
+            }
+        };
+        let mut cookies = self.cookies.write().await;
+        for cookie in match_text.lines() {
+            let cookie = match Cookie::parse_encoded(cookie) {
+                Ok(cookie) => cookie,
+                Err(e) => {
+                    error!("Error parsing cookie: {e}");
+                    continue;
+                }
+            };
+            cookies.add(cookie.into_owned());
+        }
+    }
+
+    pub async fn save(&self) {
+        let cookies = self.cookies.read().await;
+        let data = cookies.iter().map(|c| c.encoded().to_string()).collect::<Vec<String>>().join("\n");
+        drop(cookies);
+
+        let cache = self.cache_storagage.read().await;
+        let cache = match cache.as_ref() {
+            Some(cache) => cache,
+            None => {
+                error!("No cache to save cookies to");
+                return;
+            }
+        };
+
+        let resp = match web_sys::Response::new_with_opt_str(Some(data.as_str())) {
+            Ok(resp) => resp,
+            Err(_) => {
+                error!("Error creating response");
+                return;
+            }
+        };
+        let put_promise = cache.put_with_str("cookies", &resp);
+        let put_fut = JsFuture::from(put_promise);
+        match put_fut.await {
+            Ok(_) => (),
+            Err(_) => {
+                error!("Error putting cookies in cache");
+            }
+        }
     }
 }
 
