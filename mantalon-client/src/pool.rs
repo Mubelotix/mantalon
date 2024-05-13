@@ -106,87 +106,94 @@ unsafe impl Send for WasmExecutor {}
 unsafe impl Sync for WasmExecutor {}
 
 impl Pool {
-    pub async fn send_request(&self, request: Request<MantalonBody>) -> Result<Response<Incoming>, SendRequestError> {
+    async fn send_request_new_stream(&self, request: Request<MantalonBody>)  -> Result<Response<Incoming>, SendRequestError> {
         let uri = request.uri();
         let (multiaddr, server_name) = get_server(uri)?;
+        debug!("Opening connection to {}", multiaddr);
+
+        // Open the websocket
+        let ws_url = match SELF_ORIGIN.starts_with("https://") {
+            true => format!("wss://{}/mantalon-connect/{}", SELF_ORIGIN.trim_start_matches("https://"), multiaddr),
+            false => format!("ws://{}/mantalon-connect/{}", SELF_ORIGIN.trim_start_matches("http://"), multiaddr),
+        };
+        let connections2 = Rc::clone(&self.connections);
+        let multiaddr2 = multiaddr.clone();
+        let on_close = || spawn_local(async move { connections2.write().await.remove(&multiaddr2); });
+        let websocket = WebSocket::new(&ws_url).map_err(SendRequestError::Websocket)?;
+        let websocket = WrappedWebSocket::new(websocket, on_close);
+        websocket.ready().await;
+
+        let mut request_sender = if uri.scheme().map(|s| s.as_str()).unwrap_or_default() == "https" {
+            // Encrypt stream :)
+            let mut root_cert_store = RootCertStore::empty();
+            root_cert_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+            let mut config = ClientConfig::builder()
+                .with_root_certificates(root_cert_store)
+                .with_no_client_auth();
+            config.alpn_protocols.push(b"h2".to_vec());
+            config.alpn_protocols.push(b"http/1.1".to_vec());
+            let connector = TlsConnector::from(Arc::new(config));
+            let stream = connector.connect(server_name, websocket).await.map_err(SendRequestError::TlsConnect)?;
+            let stream = TokioIo::new(stream);
+            let (request_sender, connection) = conn::http2::Builder::new(WasmExecutor)
+                .max_concurrent_reset_streams(0)
+                .handshake(stream).await.map_err(SendRequestError::HttpHandshake)?;
+        
+            // Spawn a task to poll the connection and drive the HTTP state
+            spawn_local(async move {
+                if let Err(e) = connection.await {
+                    error!("Error in connection: {}", e);
+                }
+            });
+
+            request_sender
+        } else {
+            // Don't encrypt stream :(
+            let stream = TokioIo::new(websocket);
+            let (request_sender, connection) = conn::http2::handshake(WasmExecutor, stream).await.map_err(SendRequestError::HttpHandshake)?;
+        
+            // Spawn a task to poll the connection and drive the HTTP state
+            spawn_local(async move {
+                if let Err(e) = connection.await {
+                    error!("Error in connection: {}", e);
+                }
+            });
+
+            request_sender
+        };
+
+        // Store the connection
+        let request_sender2 = request_sender.clone();
+        if let Ok(mut connections) = self.connections.try_write() {
+            connections.insert(multiaddr.clone(), request_sender2);
+        } else {
+            let connections = Rc::clone(&self.connections);
+            spawn_local(async move {
+                connections.write().await.insert(multiaddr, request_sender2);
+            });
+        }
+
+        // Send the request
+        request_sender.ready().await.map_err(|_| SendRequestError::ConnectionNotReady)?;
+        request_sender.send_request(request).await.map_err(SendRequestError::Hyper)
+    }
+
+    pub async fn send_request(&self, request: Request<MantalonBody>) -> Result<Response<Incoming>, SendRequestError> {
+        let uri = request.uri();
+        let (multiaddr, _) = get_server(uri)?;
 
         match self.connections.read().await.get(&multiaddr) {
             Some(t) => {
                 debug!("Reusing connection to {}", multiaddr);
                 
                 let mut conn = t.clone();
-                conn.ready().await.map_err(|_| SendRequestError::ConnectionNotReady)?;
+                let ready = conn.ready().await;
+                if ready.is_err() {
+                    return self.send_request_new_stream(request).await;
+                }
                 conn.send_request(request).await.map_err(SendRequestError::Hyper)
             }
-            None => {
-                debug!("Opening connection to {}", multiaddr);
-
-                // Open the websocket
-                let ws_url = match SELF_ORIGIN.starts_with("https://") {
-                    true => format!("wss://{}/mantalon-connect/{}", SELF_ORIGIN.trim_start_matches("https://"), multiaddr),
-                    false => format!("ws://{}/mantalon-connect/{}", SELF_ORIGIN.trim_start_matches("http://"), multiaddr),
-                };
-                let connections2 = Rc::clone(&self.connections);
-                let multiaddr2 = multiaddr.clone();
-                let on_close = || spawn_local(async move { connections2.write().await.remove(&multiaddr2); });
-                let websocket = WebSocket::new(&ws_url).map_err(SendRequestError::Websocket)?;
-                let websocket = WrappedWebSocket::new(websocket, on_close);
-                websocket.ready().await;
-
-                let mut request_sender = if uri.scheme().map(|s| s.as_str()).unwrap_or_default() == "https" {
-                    // Encrypt stream :)
-                    let mut root_cert_store = RootCertStore::empty();
-                    root_cert_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-                    let mut config = ClientConfig::builder()
-                        .with_root_certificates(root_cert_store)
-                        .with_no_client_auth();
-                    config.alpn_protocols.push(b"h2".to_vec());
-                    config.alpn_protocols.push(b"http/1.1".to_vec());
-                    let connector = TlsConnector::from(Arc::new(config));
-                    let stream = connector.connect(server_name, websocket).await.map_err(SendRequestError::TlsConnect)?;
-                    let stream = TokioIo::new(stream);
-                    let (request_sender, connection) = conn::http2::Builder::new(WasmExecutor)
-                        .max_concurrent_reset_streams(0)
-                        .handshake(stream).await.map_err(SendRequestError::HttpHandshake)?;
-                
-                    // Spawn a task to poll the connection and drive the HTTP state
-                    spawn_local(async move {
-                        if let Err(e) = connection.await {
-                            error!("Error in connection: {}", e);
-                        }
-                    });
-
-                    request_sender
-                } else {
-                    // Don't encrypt stream :(
-                    let stream = TokioIo::new(websocket);
-                    let (request_sender, connection) = conn::http2::handshake(WasmExecutor, stream).await.map_err(SendRequestError::HttpHandshake)?;
-                
-                    // Spawn a task to poll the connection and drive the HTTP state
-                    spawn_local(async move {
-                        if let Err(e) = connection.await {
-                            error!("Error in connection: {}", e);
-                        }
-                    });
-
-                    request_sender
-                };
-
-                // Store the connection
-                let request_sender2 = request_sender.clone();
-                if let Ok(mut connections) = self.connections.try_write() {
-                    connections.insert(multiaddr.clone(), request_sender2);
-                } else {
-                    let connections = Rc::clone(&self.connections);
-                    spawn_local(async move {
-                        connections.write().await.insert(multiaddr, request_sender2);
-                    });
-                }
-
-                // Send the request
-                request_sender.ready().await.map_err(|_| SendRequestError::ConnectionNotReady)?;
-                request_sender.send_request(request).await.map_err(SendRequestError::Hyper)
-            }
+            None => self.send_request_new_stream(request).await
         }
     }
 }
