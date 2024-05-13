@@ -2,6 +2,8 @@
 class MasterController {
     _controller = null;
 
+    _overlayState = true;
+
     _drawPixelOverlay(x, y, color) {
         this.overlayCanvasCxt.fillStyle = 'rgb(' + color[0] + ',' + color[1] + ',' + color[2] + ')';
         this.overlayCanvasCxt.fillRect(x * 4 + 1, y * 4 + 1, 2, 2);
@@ -27,6 +29,9 @@ class MasterController {
     }
 
     _drawOverlay() {
+        if (!this._overlayState) {
+            return;
+        }
         this.overlayCanvasCxt.clearRect(0, 0, this.overlayCanvas.width, this.overlayCanvas.height);
         this.overlayCanvas.width = this._controller.board.width * 4;
         this.overlayCanvas.height = this._controller.board.height * 4;
@@ -40,7 +45,6 @@ class MasterController {
         colorButtons = Array.from(colorButtons);
         let allColors = colorButtons.map((button) => { return this._rgbStringToTuple(button.style.backgroundColor) });
 
-        console.log(allColors);
         let codes = {}
         const getRgba = (x, y) => {
             let index = (y * imageData.width + x) * 4;
@@ -86,15 +90,21 @@ class MasterController {
         this.overlay.onload = this._drawOverlay.bind(this);
         // Change opacity input
         this.enableInput = document.createElement("input");
+        this.enableInput.checked = true;
         this.enableInput.type = "checkbox";
         this.enableInput.style.position = "relative";
         this.enableInput.style.top = "0px";
-        this.enableInput.style.right = "0px";
+        this.enableInput.style.right = "0.3rem";
+        this.enableInput.style.cursor = "pointer";
         this.enableInput.style.zIndex = 1000;
-        
   
         this.enableInput.oninput = () => {
-            
+            this._overlayState = this.enableInput.checked;
+            if (this._overlayState) {
+                this._drawOverlay();
+            } else {
+                this.overlayCanvasCxt.clearRect(0, 0, this.overlayCanvas.width, this.overlayCanvas.height);
+            }
         }
         
         document.querySelector(".border-t :last-child").appendChild(this.enableInput);
