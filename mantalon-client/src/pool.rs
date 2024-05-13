@@ -5,7 +5,6 @@ use tokio::sync::RwLock;
 use tokio_rustls::rustls::pki_types::InvalidDnsNameError;
 use crate::*;
 use lazy_static::lazy_static;
-use tokio::sync::Mutex;
 
 lazy_static!{
     pub static ref POOL: Pool = Pool {
@@ -21,7 +20,7 @@ lazy_static!{
 
 #[allow(clippy::type_complexity)]
 pub struct Pool {
-    connections: Rc<RwLock<HashMap<String, Rc<Mutex<SendRequest<MantalonBody>>>>>>,
+    connections: Rc<RwLock<HashMap<String, SendRequest<MantalonBody>>>>,
 }
 
 unsafe impl Send for Pool {}
@@ -111,11 +110,11 @@ impl Pool {
         let uri = request.uri();
         let (multiaddr, server_name) = get_server(uri)?;
 
-        match self.connections.read().await.get(&multiaddr).map(Rc::clone) {
+        match self.connections.read().await.get(&multiaddr) {
             Some(t) => {
                 debug!("Reusing connection to {}", multiaddr);
                 
-                let mut conn = t.lock().await;
+                let mut conn = t.clone();
                 conn.ready().await.map_err(|_| SendRequestError::ConnectionNotReady)?;
                 conn.send_request(request).await.map_err(SendRequestError::Hyper)
             }
@@ -134,7 +133,7 @@ impl Pool {
                 let websocket = WrappedWebSocket::new(websocket, on_close);
                 websocket.ready().await;
 
-                let request_sender = if uri.scheme().map(|s| s.as_str()).unwrap_or_default() == "https" {
+                let mut request_sender = if uri.scheme().map(|s| s.as_str()).unwrap_or_default() == "https" {
                     // Encrypt stream :)
                     let mut root_cert_store = RootCertStore::empty();
                     root_cert_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
@@ -174,9 +173,7 @@ impl Pool {
                 };
 
                 // Store the connection
-                let request_sender = Rc::new(Mutex::new(request_sender));
-                let request_sender2 = Rc::clone(&request_sender);
-                let mut request_sender = request_sender.try_lock().expect("a mutex we just created can't be initially locked");
+                let request_sender2 = request_sender.clone();
                 if let Ok(mut connections) = self.connections.try_write() {
                     connections.insert(multiaddr.clone(), request_sender2);
                 } else {
