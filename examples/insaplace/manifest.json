@@ -5,7 +5,7 @@
     "content_edits": [
         {
             "matches": ["https://app.insaplace.me/u/boards/229db1a6-7eb6-44a3-b145-d3ff7b074003"],
-            "js": "test.js"
+            "js": "overlay.js"
         },
         {
             "matches": ["https://app.insaplace.me/login", "https://app.insaplace.me/login/validate", "https://app.insaplace.me/login/email?*", "https://app.insaplace.me/login/return?*"],
