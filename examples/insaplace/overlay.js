@@ -140,8 +140,8 @@ class MasterController {
         this.observerTimer = new MutationObserver((mutationsList, observer) => {
             if (this._checkCanPlace()) {
                 this._playSound();
-                this._sendSatus();
             }
+            this._sendSatus();
         });
 
         this.observerTimer.observe(this._controller.timerElement, { attributes : true, attributeFilter : ['class'] });
