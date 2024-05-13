@@ -101,9 +101,9 @@ class MasterController {
         this.enableInput.oninput = () => {
             this._overlayState = this.enableInput.checked;
             if (this._overlayState) {
-                this._drawOverlay();
+                this.overlayCanvas.style.display = "block";
             } else {
-                this.overlayCanvasCxt.clearRect(0, 0, this.overlayCanvas.width, this.overlayCanvas.height);
+                this.overlayCanvas.style.display = "none";
             }
         }
         
