@@ -33,6 +33,14 @@ async function respond(request, clientId, replacesClientId) {
         await new Promise(resolve => setTimeout(resolve, 100));
     }
 
+    // Handle override cookie requests
+    if (url.pathname === "/mantalon-override-cookie") {
+        let cookie_name = url_params.get("name");
+        let cookie_value = url_params.get("value");
+        overrideCookie(cookie_name, cookie_value);
+        return new Response("Cookie overridden", { status: 200 });
+    }
+
     // Proxy requests on selected domains
     if (self.proxiedDomains.includes(url.hostname)) {
         let resp = await proxiedFetch(request);
@@ -78,12 +86,13 @@ self.addEventListener("install", (event) => {
 
 // Load Mantalon library
 importScripts("/pkg/mantalon_client.js?version=LIB_VERSION");
-const { init, proxiedFetch, getProxiedDomains } = wasm_bindgen;
+const { init, proxiedFetch, getProxiedDomains, overrideCookie } = wasm_bindgen;
 async function run() {
     await wasm_bindgen("/pkg/mantalon_client_bg.wasm?version=LIB_VERSION");
     await init("/pkg/config/manifest.json?version=MANIFEST_VERSION");
     self.proxiedFetch = proxiedFetch;
     self.proxiedDomains = getProxiedDomains();
+    self.overrideCookie = overrideCookie;
     initialized = true;
     console.log("Successfully initialized Mantalon. Proxying ", self.proxiedDomains);
 }

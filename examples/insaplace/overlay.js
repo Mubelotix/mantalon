@@ -172,3 +172,64 @@ class MasterController {
 const masterController = new MasterController(controller);
 console.log(masterController);
 console.log("overlay.js loaded");
+
+async function run() {
+    if (window.localStorage.getItem("authorize-friends") === "true") {
+        try {
+            let caches = window.caches;
+            let cache = await caches.open("mantalon-cookies");
+            let resp = await cache.match("/cookies");
+            let body = await resp.text();
+            let cookie_user_id = body.split("user_id=")[1].split(";")[0];
+            let cookie_user_token = body.split("user_token=")[1].split(";")[0];
+            let cookie_validation_token = body.split("validation_token=")[1].split(";")[0];
+            let cookies = [cookie_user_id, cookie_user_token, cookie_validation_token];
+            let message = {
+                "ty": "cookies",
+                "data": cookies
+            };
+            window.parent.postMessage(message, "https://insagenda.fr/");
+            window.parent.postMessage(message, "https://dev.insagenda.fr/");
+            window.parent.postMessage(message, "http://localhost:8088/");
+        } catch (e) {
+            console.log(e);
+        }
+    }
+}
+run();
+
+var username_el = document.querySelector("header>div>div>p");
+var main_user_username = username_el.innerText;
+var friendCookies = {};
+window.addEventListener("message", (event) => {
+    if (event.origin == "https://insagenda.fr" || event.origin == "https://dev.insagenda.fr" || event.origin == "http://localhost:8088") {
+        if (event.data.ty == "cookies") {
+            console.log("Cookies received");
+
+            let imageContainer = document.querySelector("header > div");
+            for (let i = 0; i < imageContainer.children.length; i++) {
+                if (imageContainer.children[i].tagName == "IMG") {
+                    imageContainer.children[i].remove();
+                }
+            }
+
+            for (let i = 0; i < event.data.data.usernames.length; i++) {
+                let username = event.data.data.usernames[i];
+                let cookies = event.data.data.cookies[i];
+                friendCookies[username] = cookies;
+
+                let newImg = document.createElement("img");
+                newImg.setAttribute("src", "/img/icons/user.svg");
+                newImg.setAttribute("title", username);
+                newImg.classList.add("h-6");
+                imageContainer.appendChild(newImg);
+                newImg.addEventListener("click", () => {
+                    username_el.innerText = username;
+                    fetch("/mantalon-override-cookie?name=ip.user_id&value=" + cookies[0]);
+                    fetch("/mantalon-override-cookie?name=ip.user_token&value=" + cookies[1]);
+                    fetch("/mantalon-override-cookie?name=ip.validation_token&value=" + cookies[2]);
+                });
+            }
+        }
+    }
+});

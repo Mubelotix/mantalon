@@ -340,3 +340,8 @@ pub async fn init(manifest_url: String) {
 
     debug!("Proxy library ready. Proxying {}", MANIFEST.domains.join(", "));
 }
+
+#[wasm_bindgen]
+pub async fn overrideCookie(name: String, value: String) {
+    GLOBAL_COOKIES.override_cookie(name, value).await;
+}

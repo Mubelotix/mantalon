@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::{collections::HashMap, rc::Rc};
 use cookie::{Cookie, CookieJar};
 use http::{Request, Response, Uri};
 use tokio::sync::RwLock;
@@ -7,18 +7,23 @@ use lazy_static::lazy_static;
 
 lazy_static!{
     pub static ref GLOBAL_COOKIES: CookieStore = {
-        CookieStore {
-            cookies: Rc::new(RwLock::new(CookieJar::new())),
-            cache_storagage: Rc::new(RwLock::new(None)),
-        }
+        CookieStore(Rc::new(RwLock::new(CookieStoreInner {
+            cookies: CookieJar::new(),
+            cache_storagage: None,
+            overriden_cookies: HashMap::new(),
+        })))
     };
 }
 
 #[derive(Default)]
-pub struct CookieStore {
-    cookies: Rc<RwLock<CookieJar>>,
-    cache_storagage: Rc<RwLock<Option<Cache>>>,
+pub struct CookieStoreInner {
+    cookies: CookieJar,
+    cache_storagage: Option<Cache>,
+    overriden_cookies: HashMap<String, Option<Cookie<'static>>>,
 }
+
+#[derive(Default)]
+pub struct CookieStore(Rc<RwLock<CookieStoreInner>>);
 
 unsafe impl Send for CookieStore {} // Safe on wasm
 unsafe impl Sync for CookieStore {} // Safe on wasm
@@ -76,12 +81,12 @@ impl std::error::Error for CookieError {}
 
 impl CookieStore {
     pub async fn add_cookies(&self, request: &mut Request<MantalonBody>) -> Result<(), CookieError> {
+        let readable_self = self.0.read().await;
         let uri = request.uri();
         let request_domain = uri.host().ok_or(CookieError::NoOrigin)?; // TODO: Are ports ignored by cookies?
-        let cookies = self.cookies.read().await;
 
         let mut cookie_list = Vec::new(); // TODO: Optimize using string
-        for cookie in cookies.iter() { // TODO: include sameSite cookies
+        for cookie in readable_self.cookies.iter() { // TODO: include sameSite cookies
             if let Some(domain) = cookie.domain() { // TODO: Handle cookies without a domain
                 if !request_domain.ends_with(domain) {
                     continue;
@@ -103,8 +108,8 @@ impl CookieStore {
     }
 
     pub async fn store_cookies<B>(&self, uri: &Uri, response: &Response<B>) -> Result<(), CookieError> {
+        let mut writable_self = self.0.write().await;
         let request_domain = uri.host().ok_or(CookieError::NoOrigin)?;
-        let mut cookies = self.cookies.write().await;
 
         let mut changed = false;
         for cookie_header in response.headers().get_all("set-cookie") {
@@ -128,7 +133,7 @@ impl CookieStore {
                     continue;
                 }
             }
-            cookies.add(cookie.into_owned());
+            writable_self.cookies.add(cookie.into_owned());
             changed = true;
         }
 
@@ -142,7 +147,8 @@ impl CookieStore {
     }
 
     pub async fn on_storage_opened(&self, cache: Cache) {
-        self.cache_storagage.write().await.replace(cache.clone());
+        let mut writable_self = self.0.write().await;
+        writable_self.cache_storagage.replace(cache.clone());
 
         let match_promise = cache.match_with_str("cookies");
         let match_fut = JsFuture::from(match_promise);
@@ -182,7 +188,6 @@ impl CookieStore {
                 return;
             }
         };
-        let mut cookies = self.cookies.write().await;
         for cookie in match_text.lines() {
             let cookie = match Cookie::parse_encoded(cookie) {
                 Ok(cookie) => cookie,
@@ -191,17 +196,21 @@ impl CookieStore {
                     continue;
                 }
             };
-            cookies.add(cookie.into_owned());
+            writable_self.cookies.add(cookie.into_owned());
         }
     }
 
     pub async fn save(&self) {
-        let cookies = self.cookies.read().await;
-        let data = cookies.iter().map(|c| c.encoded().to_string()).collect::<Vec<String>>().join("\n");
-        drop(cookies);
+        let readable_self = self.0.read().await;
 
-        let cache = self.cache_storagage.read().await;
-        let cache = match cache.as_ref() {
+        let data = readable_self.cookies.iter()
+            .filter(|c| !readable_self.overriden_cookies.contains_key(c.name()))
+            .map(|c| c.encoded().to_string())
+            .chain(readable_self.overriden_cookies.values().filter_map(|c| c.as_ref()).map(|c| c.encoded().to_string()))
+            .collect::<Vec<String>>()
+            .join("\n");
+
+        let cache = match readable_self.cache_storagage.as_ref() {
             Some(cache) => cache,
             None => {
                 error!("No cache to save cookies to");
@@ -224,6 +233,20 @@ impl CookieStore {
                 error!("Error putting cookies in cache");
             }
         }
+    }
+
+    pub async fn override_cookie(&self, name: String, value: String) {
+        let mut writable_self = self.0.write().await;
+        let Some(cookie) = writable_self.cookies.get(&name) else {
+            writable_self.overriden_cookies.insert(name.clone(), None);
+            writable_self.cookies.add(Cookie::new(name, value));
+            return;
+        };
+        let old_cookie = cookie.clone();
+        let mut cookie = cookie.clone();
+        cookie.set_value(value);
+        writable_self.cookies.add(cookie);
+        writable_self.overriden_cookies.insert(name, Some(old_cookie));
     }
 }
 
