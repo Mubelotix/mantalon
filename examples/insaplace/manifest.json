@@ -8,7 +8,7 @@
             "js": "test.js"
         },
         {
-            "matches": ["https://app.insaplace.me/login", "https://app.insaplace.me/validate", "https://app.insaplace.me/login/email?*", "https://app.insaplace.me/login/return?*"],
+            "matches": ["https://app.insaplace.me/login", "https://app.insaplace.me/login/validate", "https://app.insaplace.me/login/email?*", "https://app.insaplace.me/login/return?*"],
             "js_redirect": true
         }
     ]
