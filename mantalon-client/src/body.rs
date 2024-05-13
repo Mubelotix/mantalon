@@ -69,22 +69,20 @@ impl Body for MantalonBody {
                 Some(data) => Poll::Ready(Some(Ok(Frame::data(data)))),
                 None => Poll::Ready(None),
             },
-            MantalonBodyProj::ReadableStream { reader, mut fut } => {
-                match fut.as_mut().poll(cx) {
-                    Poll::Ready(Ok(v)) => {
-                        *fut = JsFuture::from(reader.read());
-                        let data: Object = v.dyn_into().expect("read() must return an Object");
-                        let value = Reflect::get(&data, &"value".into()).expect("value must be present");
-                        if value.is_undefined() {
-                            return Poll::Ready(None);
-                        }
-                        let array: Uint8Array = value.dyn_into().expect("value must be a Uint8Array");
-                        let buffer: VecDeque<u8> = array.to_vec().into();
-                        Poll::Ready(Some(Ok(Frame::data(buffer))))
-                    },
-                    Poll::Ready(Err(e)) => Poll::Ready(Some(Err(MantalonBodyError::JsError(format!("{e:?}"))))),
-                    Poll::Pending => Poll::Pending
-                }
+            MantalonBodyProj::ReadableStream { reader, mut fut } => match fut.as_mut().poll(cx) {
+                Poll::Ready(Ok(v)) => {
+                    *fut = JsFuture::from(reader.read());
+                    let data: Object = v.dyn_into().expect("read() must return an Object");
+                    let value = Reflect::get(&data, &"value".into()).expect("value must be present");
+                    if value.is_undefined() {
+                        return Poll::Ready(None);
+                    }
+                    let array: Uint8Array = value.dyn_into().expect("value must be a Uint8Array");
+                    let buffer: VecDeque<u8> = array.to_vec().into();
+                    Poll::Ready(Some(Ok(Frame::data(buffer))))
+                },
+                Poll::Ready(Err(e)) => Poll::Ready(Some(Err(MantalonBodyError::JsError(format!("{e:?}"))))),
+                Poll::Pending => Poll::Pending
             },
         }
     }
