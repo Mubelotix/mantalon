@@ -72,6 +72,10 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(respond(event.request, event.clientId, event.replacesClientId)) // We need an inner function to be able to respond asynchronously
 });
 
+self.addEventListener("install", (event) => {
+  self.skipWaiting();
+});
+
 // Load Mantalon library
 importScripts("/pkg/mantalon_client.js");
 const { init, proxiedFetch, getProxiedDomains } = wasm_bindgen;
