@@ -4,20 +4,15 @@ class MasterController {
 
     _drawOverlay() {
         this.overlayCanvasCxt.clearRect(0, 0, this.overlayCanvas.width, this.overlayCanvas.height);
-        let width = this.overlay.width;
-        let height = this.overlay.height;
+        this.overlayCanvas.width = this._controller.board.width * 4;
+        this.overlayCanvas.height = this._controller.board.height * 4;
 
-        let parentWidth = this._controller.board.width;
-        let parentHeight = this._controller.board.height;
-
-        let scale = Math.min(parentWidth / width, parentHeight / height);
-        scale = Math.min(scale, 1);
-        width *= scale;
-        height *= scale;
-        this.overlayCanvasCxt.globalAlpha = this.opacityInput.value;
-        this.overlayCanvasCxt.drawImage(this.overlay,
-            0, 0, width, height
-        );
+        for(let x = 0; x < this._controller.board.width; x++) {
+            for(let y = 0; y < this._controller.board.height; y++) {
+                this.overlayCanvasCxt.fillStyle = "rgb(255, 0, 0)";
+                this.overlayCanvasCxt.fillRect(x * 4 + 1, y * 4 + 1, 2, 2);
+            }
+        }
 
         var imageData = this._controller.boardCanvasCtx.getImageData(0, 0, this._controller.board.width, this._controller.board.height);
         console.log(imageData);
@@ -30,8 +25,8 @@ class MasterController {
         this.overlayCanvasCxt = this.overlayCanvas.getContext('2d');
 
         this.overlay = new Image()
-        //this.overlay.crossOrigin = "Anonymous";
-        this.overlay.src = "https://insagenda.fr/assets/screenshots/safari-screenshot.webp"
+        this.overlay.crossOrigin = "Anonymous";
+        this.overlay.src = "http://localhost:8088/assets/screenshots/safari-screenshot.webp"
         
         this.overlay.onload = this._drawOverlay.bind(this);
         // Change opacity input
