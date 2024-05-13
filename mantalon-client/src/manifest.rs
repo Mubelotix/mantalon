@@ -15,6 +15,7 @@ pub struct Manifest {
     pub lock_browsing: Option<bool>,
     pub https_only: Option<bool>,
     pub rewrite_location: Option<bool>,
+    pub js_redirect: Option<bool>,
     pub content_edits: Vec<ContentEdit>,
 }
 
@@ -24,6 +25,7 @@ pub struct ContentEdit {
     pub lock_browsing: Option<bool>,
     pub https_only: Option<bool>,
     pub rewrite_location: Option<bool>,
+    pub js_redirect: Option<bool>,
     pub js: Option<FileInsertion>,
     pub css: Option<FileInsertion>,
     pub override_url: Option<String>,
@@ -76,6 +78,7 @@ pub struct ParsedManifest {
     pub lock_browsing: bool,
     pub https_only: bool,
     pub rewrite_location: bool,
+    pub js_redirect: bool,
     pub content_edits: Vec<ParsedContentEdit>,
 }
 
@@ -85,6 +88,7 @@ pub struct ParsedContentEdit {
     pub lock_browsing: bool,
     pub https_only: bool,
     pub rewrite_location: bool,
+    pub js_redirect: bool,
     pub js: Vec<String>,
     pub css: Vec<String>,
     pub override_uri: Option<Uri>,
@@ -193,7 +197,7 @@ impl ParsedContentEdit {
     }
 
     pub fn needs_body_response(&self) -> bool {
-        self.lock_browsing || !self.js.is_empty() || !self.css.is_empty() || !self.substitute.is_empty()
+        self.lock_browsing || !self.js.is_empty() || !self.css.is_empty() || !self.substitute.is_empty() || self.js_redirect
     }
 
     pub async fn apply_on_response_body(&self, body: &mut Vec<u8>) {
@@ -233,12 +237,6 @@ impl ParsedContentEdit {
                 let code = include_str!("../scripts/lock_browsing.js");
                 let code = code.replace("proxiedDomains", &MANIFEST.domains.iter().map(|d| format!("\"{d}\"")).collect::<Vec<_>>().join(","));
                 body.extend_from_slice(format!("<script>{code}</script></html>").as_bytes());
-            } else if body.ends_with(b"</html>\n") {
-                let len = body.len();
-                body.truncate(len - 8); 
-                let code = include_str!("../scripts/lock_browsing.js");
-                let code = code.replace("proxiedDomains", &MANIFEST.domains.iter().map(|d| format!("\"{d}\"")).collect::<Vec<_>>().join(","));
-                body.extend_from_slice(format!("<script>{code}</script></html>\n").as_bytes());
             } else {
                 error!("Parse DOM (lock)") // TODO: Parse DOM
             }
@@ -361,6 +359,7 @@ pub async fn update_manifest() -> Result<(), UpdateManifestError> {
         lock_browsing: manifest.lock_browsing.unwrap_or(false),
         https_only: manifest.https_only.unwrap_or(false),
         rewrite_location: manifest.rewrite_location.unwrap_or(true),
+        js_redirect: manifest.js_redirect.unwrap_or(false),
         content_edits: Vec::new(),
     };
     let base_domain = parsed_manifest.domains.first().ok_or(UpdateManifestError::MissingDomain)?.clone();
@@ -397,6 +396,7 @@ pub async fn update_manifest() -> Result<(), UpdateManifestError> {
             lock_browsing: edit.lock_browsing.unwrap_or(parsed_manifest.lock_browsing),
             https_only: edit.https_only.unwrap_or(parsed_manifest.https_only),
             rewrite_location: edit.rewrite_location.unwrap_or(parsed_manifest.rewrite_location),
+            js_redirect: edit.js_redirect.unwrap_or(parsed_manifest.js_redirect),
             js: edit.js.map(FileInsertion::into).unwrap_or_default(),
             css: edit.css.map(FileInsertion::into).unwrap_or_default(),
             override_uri: edit.override_url.map(Uri::try_from).transpose().map_err(UpdateManifestError::InvalidOverrideUrl)?,
@@ -430,6 +430,7 @@ impl Default for StaticManifest {
             lock_browsing: false,
             https_only: false,
             rewrite_location: true,
+            js_redirect: false,
             content_edits: Vec::new(),
         }))
     }

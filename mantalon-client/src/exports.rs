@@ -229,6 +229,29 @@ pub async fn proxiedFetch(ressource: JsValue, options: JsValue) -> Result<JsValu
         let mut body = read_entire_body(body).await.ok_or(JsValue::from_str("Error reading body"))?;
         content_edit.apply_on_response_body(&mut body).await;
 
+        'js_redirect: {
+            if content_edit.js_redirect {
+                let location = match headers.get("location") {
+                    Ok(Some(location)) => location,
+                    e => {
+                        error!("No location header to redirect to {e:?}");
+                        break 'js_redirect;
+                    }
+                };
+
+                let code = include_str!("../scripts/js_redirect.html");
+                let code = code.replace("locationToReplace", &location);
+                let len = code.len();
+                headers.set("content-length", &len.to_string()).unwrap();
+                headers.delete("location").unwrap();
+                headers.set("x-mantalon-location", &location).unwrap(); // FIXME: XSS
+                headers.set("content-type", "text/html").unwrap();
+                init.status(200);
+                
+                return Ok(Response::new_with_opt_str_and_init(Some(&code), &init)?.into());
+            }
+        }
+
         match Response::new_with_opt_u8_array_and_init(Some(&mut body), &init) {
             Ok(js_response) => Ok(js_response.into()),
             Err(e) => {
