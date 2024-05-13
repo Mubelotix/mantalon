@@ -182,7 +182,8 @@ impl Pool {
         let uri = request.uri();
         let (multiaddr, _) = get_server(uri)?;
 
-        match self.connections.read().await.get(&multiaddr) {
+        let connections = self.connections.read().await;
+        match connections.get(&multiaddr) {
             Some(t) => {
                 debug!("Reusing connection to {}", multiaddr);
                 
@@ -193,7 +194,10 @@ impl Pool {
                 }
                 conn.send_request(request).await.map_err(SendRequestError::Hyper)
             }
-            None => self.send_request_new_stream(request).await
+            None => {
+                drop(connections);
+                self.send_request_new_stream(request).await
+            }
         }
     }
 }
