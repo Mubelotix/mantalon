@@ -42,7 +42,7 @@ async function respond(request, clientId, replacesClientId) {
             currentHostnames[replacesClientId] = hostname;
         }
         return resp;
-    } else if (url.hostname == self.location.hostname) { // TODO: should be host
+    } else if (url.host == self.location.host) {
         if (!currentHostnames[clientId]) {
             currentHostnames[clientId] = self.proxiedDomains[0];
         }
