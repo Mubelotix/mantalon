@@ -77,11 +77,11 @@ self.addEventListener("install", (event) => {
 });
 
 // Load Mantalon library
-importScripts("/pkg/mantalon_client.js");
+importScripts("/pkg/mantalon_client.js?version=LIB_VERSION");
 const { init, proxiedFetch, getProxiedDomains } = wasm_bindgen;
 async function run() {
-    await wasm_bindgen("/pkg/mantalon_client_bg.wasm");
-    await init();
+    await wasm_bindgen("/pkg/mantalon_client_bg.wasm?version=LIB_VERSION");
+    await init("/pkg/config/manifest.json?version=MANIFEST_VERSION");
     self.proxiedFetch = proxiedFetch;
     self.proxiedDomains = getProxiedDomains();
     initialized = true;

@@ -1,6 +1,6 @@
 use crate::*;
 
-pub async fn http_handler(mut req: Request<Incoming>, static_files: Static, config_static_files: Static, dns_cache: DnsCache) -> Result<Response<EitherBody<FullBody, hyper_staticfile::Body>>, BoxedError> {
+pub async fn http_handler(mut req: Request<Incoming>, static_files: Static, config_static_files: Static, dns_cache: DnsCache, args: &'static Args) -> Result<Response<EitherBody<FullBody, hyper_staticfile::Body>>, BoxedError> {
     // Check path
     let path = req.uri().path();
     if path.starts_with("/pkg/config") {
@@ -19,7 +19,18 @@ pub async fn http_handler(mut req: Request<Incoming>, static_files: Static, conf
             }
         };
     }
-    if path.starts_with("/pkg/") || path == "/sw.js" {
+    if path == "/sw.js" {
+        let mut file = tokio::fs::read_to_string("mantalon-client/sw.js").await?;
+        file = file.replace("MANIFEST_VERSION", &args.manifest_version);
+        file = file.replace("LIB_VERSION", &args.lib_version);
+        let len = file.len();
+        let mut response = Response::new(FullBody::from(file));
+        *response.status_mut() = StatusCode::OK;
+        response.headers_mut().insert("Content-Type", "application/javascript".parse().unwrap());
+        response.headers_mut().insert("Content-Length", len.to_string().parse().unwrap());
+        return Ok(response.map(EitherBody::Left));
+    }
+    if path.starts_with("/pkg/") {
         debug!("Serving static file: {}", req.uri());
         return match static_files.serve(req).await {
             Ok(response) => Ok(response.map(EitherBody::Right)),

@@ -316,7 +316,7 @@ pub fn getProxiedDomains() -> Array {
 }
 
 #[wasm_bindgen]
-pub async fn init() {
+pub async fn init(manifest_url: String) {
     std::panic::set_hook(Box::new(|panic_info| {
         if let Some(s) = panic_info.payload().downcast_ref::<&str>() {
             if let Some(location) = panic_info.location() {
@@ -335,7 +335,7 @@ pub async fn init() {
         }
     }));
 
-    update_manifest().await.expect("Error updating manifest");
+    update_manifest(manifest_url).await.expect("Error updating manifest");
     open_cookie_storage().await;
 
     debug!("Proxy library ready. Proxying {}", MANIFEST.domains.join(", "));

@@ -44,6 +44,16 @@ struct Args {
     #[arg(short, long)]
     config_path: Option<String>,
 
+    /// The manifest version.
+    /// Updating it will cause all clients to update the service worker and manifest.
+    #[arg(short, long, default_value = "default")]
+    manifest_version: String,
+
+    /// The library version.
+    /// Updating it will cause all clients to update the service worker, manifest and library.
+    #[arg(short, long, default_value = "default")]
+    lib_version: String,
+
     /// The port to listen on.
     #[arg(short, long, default_value = "8000")]
     port: u16,
@@ -53,7 +63,7 @@ struct Args {
 #[tokio::main]
 async fn main() -> Result<(), BoxedError> {
     let args = Box::new(Args::parse());
-    let args = Box::leak(args);
+    let args: &'static Args = Box::leak(args);
     env_logger::init();
 
     let addr: SocketAddr = ([127, 0, 0, 1], args.port).into();
@@ -79,7 +89,7 @@ async fn main() -> Result<(), BoxedError> {
         let static_files = static_files.clone();
         let config_static_files = config_static_files.clone();
         let dns_cache = Arc::clone(&dns_cache);
-        let service = service_fn(move |r| http_handler(r, static_files.clone(), config_static_files.clone(), Arc::clone(&dns_cache)));
+        let service = service_fn(move |r| http_handler(r, static_files.clone(), config_static_files.clone(), Arc::clone(&dns_cache), args));
         tokio::spawn(async move {
             let io = TokioIo::new(stream);
             let conn = HttpBuilder::new().serve_connection(io, service);

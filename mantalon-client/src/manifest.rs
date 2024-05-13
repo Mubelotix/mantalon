@@ -337,9 +337,9 @@ fn parse_header_list(headers: Vec<String>) -> HashSet<HeaderName> {
     parsed_headers
 }
 
-pub async fn update_manifest() -> Result<(), UpdateManifestError> {
-    let promise = window().map(|w| w.fetch_with_str("/pkg/config/manifest.json"))
-        .or_else(|| js_sys::global().dyn_into::<ServiceWorkerGlobalScope>().ok().map(|sw| sw.fetch_with_str("/pkg/config/manifest.json")))
+pub async fn update_manifest(manifest_url: String) -> Result<(), UpdateManifestError> {
+    let promise = window().map(|w| w.fetch_with_str(&manifest_url))
+        .or_else(|| js_sys::global().dyn_into::<ServiceWorkerGlobalScope>().ok().map(|sw| sw.fetch_with_str(&manifest_url)))
         .ok_or(UpdateManifestError::NoWindow)?;
     let future = JsFuture::from(promise);
     let response = future.await.map_err(UpdateManifestError::FetchError)?;
