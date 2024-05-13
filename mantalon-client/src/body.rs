@@ -9,6 +9,7 @@ pin_project! {
     #[project = MantalonBodyProj]
     pub enum MantalonBody {
         Empty,
+        Known { data: Option<VecDeque<u8>> },
         ReadableStream { reader: ReadableStreamDefaultReader, #[pin] fut: JsFuture, },
     }
 }
@@ -17,6 +18,7 @@ impl fmt::Debug for MantalonBody {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             MantalonBody::Empty => f.debug_struct("MantalonBody::Empty").finish(),
+            MantalonBody::Known { .. } => f.debug_struct("MantalonBody::Known").finish_non_exhaustive(),
             MantalonBody::ReadableStream { .. } => f.debug_struct("MantalonBody::ReadableStream").finish_non_exhaustive()
         }
     }
@@ -63,6 +65,10 @@ impl Body for MantalonBody {
     ) -> Poll<Option<Result<hyper::body::Frame<Self::Data>, Self::Error>>> {
         match self.project() {
             MantalonBodyProj::Empty => Poll::Ready(None),
+            MantalonBodyProj::Known { data } => match data.take() {
+                Some(data) => Poll::Ready(Some(Ok(Frame::data(data)))),
+                None => Poll::Ready(None),
+            },
             MantalonBodyProj::ReadableStream { reader, mut fut } => {
                 match fut.as_mut().poll(cx) {
                     Poll::Ready(Ok(v)) => {

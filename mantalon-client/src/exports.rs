@@ -3,7 +3,7 @@
 use std::{cell::UnsafeCell, rc::Rc};
 use crate::*;
 use http::{HeaderName, HeaderValue, Method, Uri};
-use js_sys::{Array, Function, Iterator, Map, Object, Promise, Reflect::{self, *}, Uint8Array};
+use js_sys::{Array, ArrayBuffer, Function, Iterator, Map, Object, Promise, Reflect::{self, *}, Uint8Array};
 use url::Url;
 use urlpattern::UrlPatternMatchInput;
 use web_sys::Request;
@@ -116,6 +116,16 @@ pub async fn proxiedFetch(ressource: JsValue, options: JsValue) -> Result<JsValu
                 }
                 headers = from_headers(request.headers().into());
                 body = request.body().map(|b| b.into());
+                if body.is_none() { // Some shitty browsers don't support body
+                    if let Ok(array_buffer_promise) = request.array_buffer() {
+                        if let Ok(array_buffer) = JsFuture::from(array_buffer_promise).await {
+                            if let Ok(array_buffer) = array_buffer.dyn_into::<ArrayBuffer>() {
+                                let array = Uint8Array::new(&array_buffer);
+                                body = Some(MantalonBody::Known { data: Some(array.to_vec().into()) });
+                            }
+                        }
+                    }
+                }
             },
             Err(ressource) => {
                 if let Some(ressource) = get(&ressource, &JsValue::from_str("toString")).ok()
