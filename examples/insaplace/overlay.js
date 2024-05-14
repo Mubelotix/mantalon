@@ -214,6 +214,13 @@ window.addEventListener("message", (event) => {
                 newImg.classList.add("h-6");
                 imageContainer.appendChild(newImg);
                 newImg.addEventListener("click", async () => {
+                    Array.from(imageContainer.children).forEach(img => {
+                        if (img.tagName == "IMG") {
+                            img.style.filter = "";
+                        }
+                    });
+                    newImg.style.filter = "brightness(0) saturate(100%) invert(55%) sepia(60%) saturate(3537%) hue-rotate(168deg) brightness(104%) contrast(105%);";
+                    
                     username_el.innerText = username;
                     await fetch("/mantalon-override-cookie?name=ip.user_id&value=" + cookies[0]);
                     await fetch("/mantalon-override-cookie?name=ip.user_token&value=" + cookies[1]);
@@ -222,7 +229,6 @@ window.addEventListener("message", (event) => {
 
                     await masterController._controller.updateMember();
                     masterController._controller._initTimer();
-                 
                 });
             }
         }
