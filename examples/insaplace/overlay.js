@@ -62,7 +62,6 @@ class MasterController {
             return code;
         }
 
-
         for(let x = 0; x < this._controller.board.width; x++) {
             for(let y = 0; y < this._controller.board.height; y++) {
                 let [r, g, b, a] = getRgba(x, y);
@@ -72,7 +71,6 @@ class MasterController {
                 this._drawPixelOverlay(x, y, getRgbProp(r, g, b));
             }
         }
-
     }
 
     _checkCanPlace() {
@@ -146,23 +144,6 @@ class MasterController {
 
         this.observerTimer.observe(this._controller.timerElement, { attributes : true, attributeFilter : ['class'] });
 
-        this.observerPixelColor = new MutationObserver((mutationsList, observer) => {
-            for (let mutation of mutationsList) {
-                if (mutation.attributeName !== 'style') {
-                    continue;
-                }
-                
-                window.localStorage.setItem("color", this._controller.selectedColor)
-            }
-        });
-        console.log(this._controller.buttonColorSelectorElement);
-        this.observerPixelColor.observe(this._controller.buttonColorSelectorElement, { attributes: true, attributeFilter: ['style'] });
-
-        const selectedColor = parseInt(window.localStorage.getItem("color"));
-        if (selectedColor) {
-            this._controller.buttonColorSelectorElement.style.color = this._controller._toHexColor(selectedColor);
-            this._controller.selectedColor = selectedColor;
-        }
         document.querySelector(".border-t :last-child").appendChild(this.enableInput);
         window.addEventListener("message", this._onMessage.bind(this));
     }
