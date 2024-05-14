@@ -8,6 +8,15 @@
             "js": "overlay.js"
         },
         {
+            "matches": ["https://app.insaplace.me/js/board_controller.js"],
+            "substitute": [
+                {
+                    "pattern": "this.captchaDialog.classList.remove(\"hidden\");",
+                    "replacement_file": "capcha_solver.js"
+                }
+            ]
+        },
+        {
             "matches": ["https://app.insaplace.me/u/boards"],
             "js": "redirect_on_login.js"
         },
