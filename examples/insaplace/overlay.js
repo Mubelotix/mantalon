@@ -79,6 +79,7 @@ class MasterController {
 
     _playSound() {
         const audio = new Audio("https://assets.mixkit.co/active_storage/sfx/600/600.wav");
+        audio.volume = 0.8;
         audio.play();   
     }
 
