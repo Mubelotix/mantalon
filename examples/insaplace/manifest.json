@@ -8,6 +8,10 @@
             "js": "overlay.js"
         },
         {
+            "matches": ["https://app.insaplace.me/u/boards"],
+            "js": "redirect_on_login.js"
+        },
+        {
             "matches": ["https://app.insaplace.me/login/email?*"],
             "js_redirect": true,
             "js": "login.js"
