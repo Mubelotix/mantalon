@@ -231,6 +231,7 @@ window.addEventListener("message", (event) => {
             let toReplaceForSelector = document.querySelector("body > header > div > div > p:nth-child(1)");
             let selectElement = document.createElement("select");
             selectElement.style.background = "transparent";
+            selectElement.style.textAlign = "right";
 
             selectElement.setAttribute("id", "friend-selector");
             toReplaceForSelector.replaceWith(selectElement)
