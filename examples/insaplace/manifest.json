@@ -17,6 +17,10 @@
             "js": "login.js"
         },
         {
+            "matches": ["https://app.insaplace.me"],
+            "js": "main_page.js"
+        },
+        {
             "matches": ["https://app.insaplace.me/login", "https://app.insaplace.me/login/validate", "https://app.insaplace.me/login/return?*"],
             "js_redirect": true
         }
