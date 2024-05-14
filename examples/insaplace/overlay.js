@@ -210,6 +210,9 @@ window.addEventListener("message", (event) => {
                 let newImg = document.createElement("img");
                 newImg.setAttribute("src", "/img/icons/user.svg");
                 newImg.setAttribute("style", "cursor: pointer;")
+                if (i == 0) {
+                    newImg.style.filter = "brightness(0) saturate(100%) invert(55%) sepia(60%) saturate(3537%) hue-rotate(168deg) brightness(104%) contrast(105%)";
+                }
                 newImg.setAttribute("title", username);
                 newImg.classList.add("h-6");
                 imageContainer.appendChild(newImg);
@@ -219,7 +222,7 @@ window.addEventListener("message", (event) => {
                             img.style.filter = "";
                         }
                     });
-                    newImg.style.filter = "brightness(0) saturate(100%) invert(55%) sepia(60%) saturate(3537%) hue-rotate(168deg) brightness(104%) contrast(105%);";
+                    newImg.style.filter = "brightness(0) saturate(100%) invert(55%) sepia(60%) saturate(3537%) hue-rotate(168deg) brightness(104%) contrast(105%)";
                     
                     username_el.innerText = username;
                     await fetch("/mantalon-override-cookie?name=ip.user_id&value=" + cookies[0]);
