@@ -228,8 +228,9 @@ window.addEventListener("message", (event) => {
                     await fetch("/mantalon-override-cookie?name=ip.user_id&value=" + cookies[0]);
                     await fetch("/mantalon-override-cookie?name=ip.user_token&value=" + cookies[1]);
                     await fetch("/mantalon-override-cookie?name=ip.validation_token&value=" + cookies[2]);
-                    await this._controller.updateMember()
-        
+                    await this._controller.updateMember();
+                    this._controller._initTimer();
+                 
                 });
             }
         }
