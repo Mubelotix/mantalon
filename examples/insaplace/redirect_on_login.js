@@ -1,4 +1,1 @@
-let a_el = document.querySelector("main>div>a");
-if (a_el) {
-    a_el.click();
-}
+window.location.href = "/u/boards/229db1a6-7eb6-44a3-b145-d3ff7b074003";
