@@ -247,3 +247,8 @@ window.addEventListener("message", (event) => {
         }
     }
 });
+
+masterController._controller.placePixelElement?.addEventListener('click', (event) => async () => {
+    await masterController._controller.updateMember();
+    masterController._controller._initTimer();
+});
