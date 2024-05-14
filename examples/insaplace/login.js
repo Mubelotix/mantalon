@@ -53,7 +53,7 @@ submit.setAttribute("type", "button");
 async function custom_submit() {
     try {
         submit.setAttribute("disabled", "disabled");
-        submit.textContent = "Patientez 15 secondes la résolution du captcha...";
+        submit.textContent = "Patientez une quinzaine de secondes...";
         let resp = await fetch("https://insagenda.fr/queue-capcha");
         let g_recaptcha_response = await resp.text();
         let captcha = document.createElement("input");
