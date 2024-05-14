@@ -214,6 +214,7 @@ window.addEventListener("message", (event) => {
             console.log("Cookies received");
 
             let imageContainer = document.querySelector("header > div");
+            imageContainer.setAttribute("style", "overflow: auto hidden;");
             for (let i = 0; i < imageContainer.children.length; i++) {
                 if (imageContainer.children[i].tagName == "IMG") {
                     imageContainer.children[i].remove();
