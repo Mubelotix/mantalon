@@ -164,7 +164,6 @@ class MasterController {
             this._controller.selectedColor = selectedColor;
         }
         document.querySelector(".border-t :last-child").appendChild(this.enableInput);
-
         window.addEventListener("message", this._onMessage.bind(this));
     }
  }
@@ -173,7 +172,7 @@ const masterController = new MasterController(controller);
 console.log(masterController);
 console.log("overlay.js loaded");
 
-async function run() {
+async function run(memberId) {
     if (window.localStorage.getItem("authorize-friends") === "true") {
         try {
             let caches = window.caches;
@@ -183,7 +182,8 @@ async function run() {
             let cookie_user_id = body.split("user_id=")[1].split(";")[0];
             let cookie_user_token = body.split("user_token=")[1].split(";")[0];
             let cookie_validation_token = body.split("validation_token=")[1].split(";")[0];
-            let cookies = [cookie_user_id, cookie_user_token, cookie_validation_token];
+
+            let cookies = [cookie_user_id, cookie_user_token, cookie_validation_token, memberId];
             let message = {
                 "ty": "cookies",
                 "data": cookies
@@ -196,7 +196,7 @@ async function run() {
         }
     }
 }
-run();
+run(data.member.id);
 
 var username_el = document.querySelector("header>div>div>p");
 var main_user_username = username_el.innerText;
@@ -229,6 +229,8 @@ window.addEventListener("message", (event) => {
                     await fetch("/mantalon-override-cookie?name=ip.user_id&value=" + cookies[0]);
                     await fetch("/mantalon-override-cookie?name=ip.user_token&value=" + cookies[1]);
                     await fetch("/mantalon-override-cookie?name=ip.validation_token&value=" + cookies[2]);
+                    masterController._controller.member.id = cookies[3];
+
                     await masterController._controller.updateMember();
                     masterController._controller._initTimer();
                  
