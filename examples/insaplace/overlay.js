@@ -220,6 +220,7 @@ window.addEventListener("message", (event) => {
 
                 let newImg = document.createElement("img");
                 newImg.setAttribute("src", "/img/icons/user.svg");
+                newImg.setAttribute("style", "cursor: pointer;")
                 newImg.setAttribute("title", username);
                 newImg.classList.add("h-6");
                 imageContainer.appendChild(newImg);
