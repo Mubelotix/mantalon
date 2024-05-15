@@ -187,80 +187,79 @@ async function run(memberId) {
 }
 run(data.member.id);
 
-var i = 0;
+// var i = 0;
+// document.addEventListener('keydown', async (event) => {
+//     // Arrow left
+//     if (event.key === "ArrowLeft") {
+//         i -= 1;
+//     }
+//     // Arrow right
+//     if (event.key === "ArrowRight") {
+//         i += 1;
+//     }
+//     i = i % firendUsernames.length;
+//     if (i < 0) {
+//         i = firendUsernames.length + i;
+//     }
+//     let username = firendUsernames[i];
+//     let cookies = friendCookies[username];
+//     await setUser(i, username, cookies, masterController);
+//     masterController._controller._initTimer();
+// });
 
-document.addEventListener('keydown', async (event) => {
-    // Arrow left
-    if (event.key === "ArrowLeft") {
-        i -= 1;
-    }
-    // Arrow right
-    if (event.key === "ArrowRight") {
-        i += 1;
-    }
-    i = i % firendUsernames.length;
-    if (i < 0) {
-        i = firendUsernames.length + i;
-    }
-    let username = firendUsernames[i];
-    let cookies = friendCookies[username];
-    await setUser(i, username, cookies, masterController);
-    masterController._controller._initTimer();
-});
 
+// async function setUser(i, username, cookies, masterController) {
+//     await fetch("/mantalon-override-cookie?name=ip.user_id&value=" + cookies[0]);
+//     await fetch("/mantalon-override-cookie?name=ip.user_token&value=" + cookies[1]);
+//     await fetch("/mantalon-override-cookie?name=ip.validation_token&value=" + cookies[2]);
+//     masterController._controller.member.id = cookies[3];
 
-async function setUser(i, username, cookies, masterController) {
-    await fetch("/mantalon-override-cookie?name=ip.user_id&value=" + cookies[0]);
-    await fetch("/mantalon-override-cookie?name=ip.user_token&value=" + cookies[1]);
-    await fetch("/mantalon-override-cookie?name=ip.validation_token&value=" + cookies[2]);
-    masterController._controller.member.id = cookies[3];
+//     await masterController._controller.updateMember();
+//     masterController._controller._initTimer();
+// }
 
-    await masterController._controller.updateMember();
-    masterController._controller._initTimer();
-}
-
-var username_el = document.querySelector("header>div>div>p");
-var main_user_username = username_el.innerText;
-var friendCookies = {};
-var firendUsernames = [];
-window.addEventListener("message", (event) => {
-    if (event.origin == "https://insagenda.fr" || event.origin == "https://dev.insagenda.fr" || event.origin == "http://localhost:8088") {
-        if (event.data.ty == "cookies") {
-            console.log("Cookies received");
+// var username_el = document.querySelector("header>div>div>p");
+// var main_user_username = username_el.innerText;
+// var friendCookies = {};
+// var firendUsernames = [];
+// window.addEventListener("message", (event) => {
+//     if (event.origin == "https://insagenda.fr" || event.origin == "https://dev.insagenda.fr" || event.origin == "http://localhost:8088") {
+//         if (event.data.ty == "cookies") {
+//             console.log("Cookies received");
                 
-            let toReplaceForSelector = document.querySelector("body > header > div > div > p:nth-child(1)");
-            let selectElement = document.createElement("select");
-            selectElement.style.background = "transparent";
-            selectElement.style.textAlign = "right";
+//             let toReplaceForSelector = document.querySelector("body > header > div > div > p:nth-child(1)");
+//             let selectElement = document.createElement("select");
+//             selectElement.style.background = "transparent";
+//             selectElement.style.textAlign = "right";
 
-            selectElement.setAttribute("id", "friend-selector");
-            toReplaceForSelector.replaceWith(selectElement)
+//             selectElement.setAttribute("id", "friend-selector");
+//             toReplaceForSelector.replaceWith(selectElement)
 
-            // Add options
-            for (let i = 0; i < event.data.data.usernames.length; i++) {
-                let username = event.data.data.usernames[i];
-                let cookies = event.data.data.cookies[i];
-                firendUsernames.push(username);
-                friendCookies[username] = cookies;
-                let option = document.createElement("option");
-                option.value = username;
-                option.innerText = username;
-                selectElement.appendChild(option);
-            }
+//             // Add options
+//             for (let i = 0; i < event.data.data.usernames.length; i++) {
+//                 let username = event.data.data.usernames[i];
+//                 let cookies = event.data.data.cookies[i];
+//                 firendUsernames.push(username);
+//                 friendCookies[username] = cookies;
+//                 let option = document.createElement("option");
+//                 option.value = username;
+//                 option.innerText = username;
+//                 selectElement.appendChild(option);
+//             }
 
 
-            selectElement.addEventListener("change", async (event) => {
-                let i = event.target.selectedIndex;
-                let username = event.target.value;
-                let cookies = friendCookies[username];
-                await setUser(i, username, cookies, masterController);
-            })
+//             selectElement.addEventListener("change", async (event) => {
+//                 let i = event.target.selectedIndex;
+//                 let username = event.target.value;
+//                 let cookies = friendCookies[username];
+//                 await setUser(i, username, cookies, masterController);
+//             })
             
-        }
-    }
-});
+//         }
+//     }
+// });
 
-masterController._controller.placePixelElement?.addEventListener('click', (event) => async () => {
-    await masterController._controller.updateMember();
-    masterController._controller._initTimer();
-});
+// masterController._controller.placePixelElement?.addEventListener('click', (event) => async () => {
+//     await masterController._controller.updateMember();
+//     masterController._controller._initTimer();
+// });

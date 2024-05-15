@@ -8,7 +8,7 @@ newDiv.outerHTML = `
 <div class="my-2">
     <div class="flex items-center">
     <input type="checkbox" id="authorize-friends" name="authorize-friends" checked class="form-checkbox h-4 w-4 text-primary-600">
-    <label for="authorize-friends" class="ml-2 text-sm text-gray-700">Permettre à mes amis insagenda de placer mes pixels</label>
+    <label for="authorize-friends" class="ml-2 text-sm text-gray-700">Permettre à mes amis insagenda de placer mes pixels (désactivé)</label>
     </div>
 </div>
 `;
