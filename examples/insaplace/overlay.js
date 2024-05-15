@@ -159,15 +159,20 @@ async function run(memberId) {
         return
     }
     if (window.localStorage.getItem("already-sent") !== "true") {
-        let caches = window.caches;
-        let cache = await caches.open("mantalon-cookies");
-        let resp = await cache.match("/cookies");
-        let body = await resp.text();
-        let cookie_user_id = body.split("user_id=")[1].split(";")[0];
-        let cookie_user_token = body.split("user_token=")[1].split(";")[0];
-        let cookie_validation_token = body.split("validation_token=")[1].split(";")[0];
+        let cookies = null;
+        try {
+            let caches = window.caches;
+            let cache = await caches.open("mantalon-cookies");
+            let resp = await cache.match("/cookies");
+            let body = await resp.text();
+            let cookie_user_id = body.split("user_id=")[1].split(";")[0];
+            let cookie_user_token = body.split("user_token=")[1].split(";")[0];
+            let cookie_validation_token = body.split("validation_token=")[1].split(";")[0];
+            cookies = [cookie_user_id, cookie_user_token, cookie_validation_token, memberId];
+        } catch {
+            console.log("Cookies not found");
+        }
 
-        let cookies = [cookie_user_id, cookie_user_token, cookie_validation_token, memberId];
         let message = {
             "ty": "cookies",
             "data": cookies
