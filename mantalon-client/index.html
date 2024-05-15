@@ -12,6 +12,8 @@
         Si rien ne se passe après quelques dizaines de secondes, rechargez la page. Si cela ne corrige pas le problème, rendez-vous sur <a href="https://insaplace2.insagenda.fr">insaplace2.insagenda.fr</a> et supprimez les données du site. Dans la plupart des navigateurs, vous trouverez cette option en cliquant sur le cadenas à gauche de l'URL.
     </p>
     <script>
+        let p = document.querySelector("p");
+
         const registerServiceWorker = async () => {
             if ("serviceWorker" in navigator) {
                 try {
@@ -22,17 +24,36 @@
                         console.log("Service worker installed");
                     } else if (registration.active) {
                         console.log("Service worker active");
+                    } else {
+                        p.textContent = "Erreur inconnue lors de l'installation du service worker.";
                     }
                 } catch (error) {
-                    console.error(`Registration failed with ${error}`);
+                    p.textContent = "Impossible de charger le service worker. " + error;
                 }
+            } else {
+                p.textContent = "Service workers non supportés par le navigateur.";
             }
         };
         registerServiceWorker();
 
         navigator.serviceWorker.ready.then((registration) => {
-            console.log("Service worker ready");
-            window.location.reload();
+            registration.active.postMessage({type: "mantalon-init-status"});
+        });
+
+        // Listen for messages
+        navigator.serviceWorker.addEventListener("message", async (event) => {
+            if (event.data.type === "mantalon-init-error") {
+                p.textContent = "Erreur lors de l'initialisation du proxy: " + event.data.error;
+                let registration = await navigator.serviceWorker.getRegistration("/");
+                if (registration) {
+                    registration.unregister();
+                }
+            } else if (event.data.type === "mantalon-init-success") {
+                p.textContent = "Proxy initialisé! Chargement...";
+                window.location.reload();
+            } else {
+                p.textContent = "Message inconnu reçu: " + event.data.type + " - " + event.data.error;
+            }
         });
     </script>
 </body>
