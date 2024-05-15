@@ -148,7 +148,17 @@ class MasterController {
         document.querySelector(".border-t :last-child").appendChild(this.enableInput);
         window.addEventListener("message", this._onMessage.bind(this));
     }
- }
+}
+
+async function checkLoggedIn() {
+    if (document.documentElement.outerText.includes("Oups... Vous n'avez pas accès à cette page!")) {
+        await fetch("/mantalon-override-cookie?name=ip.user_id&value=");
+        await fetch("/mantalon-override-cookie?name=ip.user_token&value=");
+        await fetch("/mantalon-override-cookie?name=ip.validation_token&value=");
+        window.location.href = "/login/email";
+    }    
+}
+checkLoggedIn();
 
 const masterController = new MasterController(controller);
 console.log(masterController);
