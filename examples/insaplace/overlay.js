@@ -251,6 +251,32 @@ window.addEventListener("message", (event) => {
                 option.value = username;
                 option.innerText = username;
                 selectElement.appendChild(option);
+
+
+                setInterval(async () => {
+                    let memberId = cookies[3];
+                    const response = await fetch(`${masterController._controller.apiUrl}/boards/${masterController._controller.board.id}/members/${memberId}`, {
+                        credentials: "include",
+                    });
+                
+                    if (response.status !== 200) {
+                        return;
+                    }
+
+                    let member = await response.json();
+                    let next_pixel = member.next_pixel;
+                    let seconds = next_pixel.seconds;
+
+                    let now = new Date();
+                    let now_seconds = now.getTime() / 1000;
+                    let time_left = seconds - now_seconds;
+
+                    if (time_left < 0) {
+                        console.log(username + " is out of time");
+                        return;
+                    }                    
+                }, 1000);
+
             }
 
 
@@ -261,9 +287,11 @@ window.addEventListener("message", (event) => {
                 await setUser(i, username, cookies, masterController);
             })
             
+
         }
     }
 });
+
 
 masterController._controller.placePixelElement?.addEventListener('click', (event) => async () => {
     await masterController._controller.updateMember();
