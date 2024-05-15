@@ -253,7 +253,7 @@ window.addEventListener("message", (event) => {
                 selectElement.appendChild(option);
 
 
-                setInterval(async () => {
+                /*setInterval(async () => {
                     let memberId = cookies[3];
                     const response = await fetch(`${masterController._controller.apiUrl}/boards/${masterController._controller.board.id}/members/${memberId}`, {
                         credentials: "include",
@@ -275,7 +275,7 @@ window.addEventListener("message", (event) => {
                         console.log(username + " is out of time");
                         return;
                     }                    
-                }, 1000);
+                }, 1000);*/
 
             }
 
