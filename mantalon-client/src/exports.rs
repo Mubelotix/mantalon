@@ -201,7 +201,10 @@ pub async fn proxiedFetch(ressource: JsValue, options: JsValue) -> Result<JsValu
     // Send request
     let mut response = match proxied_fetch_with_global_cookies(request).await { // TODO: allow not using global cookies
         Ok(response) => response,
-        Err(error) => return Err(JsValue::from_str(&error.to_string())),
+        Err(error) => {
+            error!("Error sending request: {error:?}");
+            return Err(JsValue::from_str(&error.to_string()));
+        },
     };
 
     // Apply edit on response (without body)
