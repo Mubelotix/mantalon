@@ -15,14 +15,14 @@ newDiv.outerHTML = `
 
 // Add a notice at the top of the page
 var state = true;
-window.sessionStorage.setItem("authorize-friends", state);
+window.localStorage.setItem("authorize-friends", state);
 document.getElementById("authorize-friends").addEventListener("click", function() {
     if (state) {
         state = false;
     } else {
         state = true;
     }
-    window.sessionStorage.setItem("authorize-friends", state);
+    window.localStorage.setItem("authorize-friends", state);
 });
 
 let form = document.querySelector("main > div > form");
