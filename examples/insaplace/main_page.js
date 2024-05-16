@@ -9,6 +9,11 @@ window.parent.postMessage(message, "http://localhost:8088/");
 window.addEventListener("message", async (event) => {
     if (event.origin == "https://insagenda.fr" || event.origin == "https://dev.insagenda.fr" || event.origin == "http://localhost:8088") {
         if (event.data.ty == "restoreCookies") {
+            if (window.localStorage.getItem("already-restored") == "true") {
+                return;
+            } else {
+                window.localStorage.setItem("already-restored", "true");
+            }
             console.log("Cookies received");
             let cookies = event.data.data;
             await fetch("/mantalon-override-cookie?name=ip.user_id&value=" + cookies[0]);
