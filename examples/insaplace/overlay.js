@@ -156,7 +156,8 @@ async function checkLoggedIn() {
         await fetch("/mantalon-override-cookie?name=ip.user_token&value=");
         await fetch("/mantalon-override-cookie?name=ip.validation_token&value=");
         window.location.href = "/login/email";
-    }    
+        console.log("reload because not logged in");
+    }
 }
 checkLoggedIn();
 
