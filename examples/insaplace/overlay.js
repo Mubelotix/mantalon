@@ -166,10 +166,10 @@ console.log(masterController);
 console.log("overlay.js loaded");
 
 async function run(memberId) {
-    if (window.localStorage.getItem("authorize-friends") === "false") {
+    if (window.sessionStorage.getItem("authorize-friends") === "false") {
         return
     }
-    if (window.localStorage.getItem("already-sent") !== "true") {
+    if (window.sessionStorage.getItem("already-sent") !== "true") {
         let cookies = null;
         try {
             let caches = window.caches;
@@ -188,7 +188,7 @@ async function run(memberId) {
             "ty": "cookies",
             "data": cookies
         };
-        window.localStorage.setItem("already-sent", "true");
+        window.sessionStorage.setItem("already-sent", "true");
         window.parent.postMessage(message, "https://insagenda.fr/");
         window.parent.postMessage(message, "https://dev.insagenda.fr/");
         window.parent.postMessage(message, "http://localhost:8088/");
