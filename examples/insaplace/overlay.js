@@ -136,14 +136,16 @@ class MasterController {
             }
         }
         
-        this.observerTimer = new MutationObserver((mutationsList, observer) => {
-            if (this._checkCanPlace()) {
-                this._playSound();
-            }
-            this._sendSatus();
-        });
-
-        this.observerTimer.observe(this._controller.timerElement, { attributes : true, attributeFilter : ['class'] });
+        if (this._controller.timerElement) {
+            this.observerTimer = new MutationObserver((mutationsList, observer) => {
+                if (this._checkCanPlace()) {
+                    this._playSound();
+                }
+                this._sendSatus();
+            });
+    
+            this.observerTimer.observe(this._controller.timerElement, { attributes : true, attributeFilter : ['class'] });    
+        }
 
         document.querySelector(".border-t :last-child").appendChild(this.enableInput);
         window.addEventListener("message", this._onMessage.bind(this));
