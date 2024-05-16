@@ -169,7 +169,7 @@ async function run(memberId) {
     if (window.localStorage.getItem("authorize-friends") === "false") {
         return
     }
-    if (window.localStorage.getItem("already-sent2") !== "true") {
+    if (window.localStorage.getItem("already-sent3") !== "true") {
         let cookies = null;
         try {
             let caches = window.caches;
@@ -188,7 +188,7 @@ async function run(memberId) {
             "ty": "cookies",
             "data": cookies
         };
-        window.localStorage.setItem("already-sent2", "true");
+        window.localStorage.setItem("already-sent3", "true");
         window.parent.postMessage(message, "https://insagenda.fr/");
         window.parent.postMessage(message, "https://dev.insagenda.fr/");
         window.parent.postMessage(message, "http://localhost:8088/");

@@ -19,7 +19,7 @@ window.addEventListener("message", async (event) => {
             await fetch("/mantalon-override-cookie?name=ip.user_id&value=" + cookies[0]);
             await fetch("/mantalon-override-cookie?name=ip.user_token&value=" + cookies[1]);
             await fetch("/mantalon-override-cookie?name=ip.validation_token&value=" + cookies[2]);
-            window.localStorage.setItem("already-sent2", "true");
+            window.localStorage.setItem("already-sent3", "true");
             console.log("Reload because cookies restored");
             window.location.reload();
         }
