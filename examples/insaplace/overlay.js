@@ -74,7 +74,11 @@ class MasterController {
     }
 
     _checkCanPlace() {
-        return this._controller.timerElement.classList.contains("hidden");
+        try {
+            return this._controller.timerElement.classList.contains("hidden");
+        } catch {
+            return false;
+        }
     }
 
     _playSound() {
