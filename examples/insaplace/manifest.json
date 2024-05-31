@@ -32,6 +32,12 @@
         {
             "matches": ["https://app.insaplace.me/login", "https://app.insaplace.me/login/validate", "https://app.insaplace.me/login/return?*"],
             "js_redirect": true
+        },
+        {
+            "matches": ["https://api.insaplace.me/boards/*"],
+            "rename_request_headers": {
+                "X-Cookie": "Cookie" 
+            }
         }
     ]
 }
