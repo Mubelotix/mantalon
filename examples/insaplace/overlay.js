@@ -272,8 +272,10 @@ window.addEventListener("message", (event) => {
 
                 /*setInterval(async () => {
                     let memberId = cookies[3];
-                    const response = await fetch(`${masterController._controller.apiUrl}/boards/${masterController._controller.board.id}/members/${memberId}`, {
-                        credentials: "include",
+                    const response = await fetch(`https://api.insaplace.me/boards/${masterController._controller.board.id}/members/${memberId}`, {
+                        headers: {
+                            "X-Cookie": `ip.user_id=${cookies[0]}; ip.user_token=${cookies[1]}; ip.validation_token=${cookies[2]};`
+                        }
                     });
                 
                     if (response.status !== 200) {

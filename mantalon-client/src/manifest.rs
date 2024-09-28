@@ -43,6 +43,10 @@ pub struct ContentEdit {
     pub insert_request_headers: HashMap<String, String>,
     #[serde(default)]
     pub remove_request_headers: Vec<String>,
+    #[serde(default)]
+    pub rename_headers: HashMap<String, String>,
+    #[serde(default)]
+    pub rename_request_headers: HashMap<String, String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -96,9 +100,11 @@ pub struct ParsedContentEdit {
     pub append_headers: HashMap<HeaderName, HeaderValue>,
     pub insert_headers: HashMap<HeaderName, HeaderValue>,
     pub remove_headers: HashSet<HeaderName>,
+    pub rename_headers: HashMap<HeaderName, HeaderName>,
     pub append_request_headers: HashMap<HeaderName, HeaderValue>,
     pub insert_request_headers: HashMap<HeaderName, HeaderValue>,
     pub remove_request_headers: HashSet<HeaderName>,
+    pub rename_request_headers: HashMap<HeaderName, HeaderName>,
 }
 
 fn search_haystack<T: PartialEq>(needle: &[T], haystack: &[T]) -> Option<usize> {
@@ -157,6 +163,12 @@ impl ParsedContentEdit {
         for header in &self.append_request_headers {
             request.headers_mut().append(header.0.clone(), header.1.clone());
         }
+
+        for header in &self.rename_request_headers {
+            if let Some(value) = request.headers_mut().remove(header.0) {
+                request.headers_mut().insert(header.1.clone(), value);
+            }
+        }
     }
     
     pub fn apply_on_response(&self, response: &mut http::Response<Incoming>) {
@@ -193,6 +205,11 @@ impl ParsedContentEdit {
         }
         for header in &self.append_headers {
             response.headers_mut().append(header.0.clone(), header.1.clone());
+        }
+        for header in &self.rename_headers {
+            if let Some(value) = response.headers_mut().remove(header.0) {
+                response.headers_mut().insert(header.1.clone(), value);
+            }
         }
     }
 
@@ -337,6 +354,29 @@ fn parse_header_list(headers: Vec<String>) -> HashSet<HeaderName> {
     parsed_headers
 }
 
+#[allow(clippy::mutable_key_type)]
+fn parse_header_rename(headers: HashMap<String, String>) -> HashMap<HeaderName, HeaderName> {
+    let mut parsed_headers: HashMap<HeaderName, HeaderName> = HashMap::new();
+    for (k, v) in headers {
+        let k = match HeaderName::from_bytes(k.as_bytes()) {
+            Ok(k) => k,
+            Err(e) => {
+                error!("Invalid header name {k:?}: {:?}", e);
+                continue;
+            }
+        };
+        let v = match HeaderName::from_bytes(v.as_bytes()) {
+            Ok(v) => v,
+            Err(e) => {
+                error!("Invalid header name {v:?}: {:?}", e);
+                continue;
+            }
+        };
+        parsed_headers.insert(k, v);
+    }
+    parsed_headers
+}
+
 pub async fn update_manifest(manifest_url: String) -> Result<(), UpdateManifestError> {
     let promise = window().map(|w| w.fetch_with_str(&manifest_url))
         .or_else(|| js_sys::global().dyn_into::<ServiceWorkerGlobalScope>().ok().map(|sw| sw.fetch_with_str(&manifest_url)))
@@ -407,6 +447,8 @@ pub async fn update_manifest(manifest_url: String) -> Result<(), UpdateManifestE
             append_request_headers: parse_headers(edit.append_request_headers),
             insert_request_headers: parse_headers(edit.insert_request_headers),
             remove_request_headers: parse_header_list(edit.remove_request_headers),
+            rename_headers: parse_header_rename(edit.rename_headers),
+            rename_request_headers: parse_header_rename(edit.rename_request_headers),
         };
 
         parsed_manifest.content_edits.push(parsed_edit);
