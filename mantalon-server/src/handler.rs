@@ -1,66 +1,10 @@
 use crate::*;
 
-pub async fn http_handler(mut req: Request<Incoming>, static_files: Static, config_static_files: Static, dns_cache: DnsCache, args: &'static Args) -> Result<Response<EitherBody<FullBody, hyper_staticfile::Body>>, BoxedError> {
+pub async fn http_handler(req: Request<Incoming>, dns_cache: DnsCache, _args: &'static Args) -> Result<Response<EitherBody<FullBody, hyper_staticfile::Body>>, BoxedError> {
     // Check path
     let path = req.uri().path();
-    if path.starts_with("/pkg/config") {
-        let mut uri_parts = req.uri().clone().into_parts();
-        uri_parts.path_and_query = Some(path.trim_start_matches("/pkg/config").parse().unwrap());
-        *req.uri_mut() = Uri::from_parts(uri_parts).unwrap();
-        
-        debug!("Serving static config file: {}", req.uri());
-        return match config_static_files.serve(req).await {
-            Ok(response) => Ok(response.map(EitherBody::Right)),
-            Err(e) => {
-                error!("Static file error: {e}");
-                let mut response = Response::new(FullBody::from("Internal server error"));
-                *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-                Ok(response.map(EitherBody::Left))
-            }
-        };
-    }
-    if path == "/sw.js" {
-        let mut file = tokio::fs::read_to_string("mantalon-client/sw.js").await?;
-        file = file.replace("MANIFEST_VERSION", &args.manifest_version);
-        file = file.replace("LIB_VERSION", &args.lib_version);
-        let len = file.len();
-        let mut response = Response::new(FullBody::from(file));
-        *response.status_mut() = StatusCode::OK;
-        response.headers_mut().insert("Content-Type", "application/javascript".parse().unwrap());
-        response.headers_mut().insert("Content-Length", len.to_string().parse().unwrap());
-        return Ok(response.map(EitherBody::Left));
-    }
-    if path.starts_with("/pkg/") {
-        debug!("Serving static file: {}", req.uri());
-        return match static_files.serve(req).await {
-            Ok(response) => Ok(response.map(EitherBody::Right)),
-            Err(e) => {
-                error!("Static file error: {e}");
-                let mut response = Response::new(FullBody::from("Internal server error"));
-                *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-                Ok(response.map(EitherBody::Left))
-            }
-        };
-    }
     if !path.starts_with("/mantalon-connect/") && path != "/mantalon-connect" {
-        if req.method() == Method::GET {
-            let mut uri = req.uri().clone().into_parts();
-            uri.path_and_query = Some("index.html".parse().unwrap());
-            *req.uri_mut() = Uri::from_parts(uri).unwrap();
-
-            return match static_files.serve(req).await {
-                Ok(response) => Ok(response.map(EitherBody::Right)),
-                Err(e) => {
-                    error!("Static file error: {e}");
-                    let mut response = Response::new(FullBody::from("Internal server error"));
-                    *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-                    Ok(response.map(EitherBody::Left))
-                }
-            };
-        }
-
-        warn!("Endpoint not found: {path}");
-        let mut response = Response::new(FullBody::from("Endpoint not found. Try /mantalon-connect"));
+        let mut response = Response::new(FullBody::from("Endpoint not found. Try /mantalon-connect or see the GitHub at https://github.com/Mubelotix/mantalon"));
         *response.status_mut() = StatusCode::NOT_FOUND;
         return Ok(response.map(EitherBody::Left));
     }
@@ -159,11 +103,13 @@ pub async fn http_handler(mut req: Request<Incoming>, static_files: Static, conf
 
     // Create handshake server
     let mut server = Server::new();
-    #[cfg(feature = "deflate")]
-    {
-        let deflate = soketto::extension::deflate::Deflate::new(soketto::Mode::Server);
-        server.add_extension(Box::new(deflate));
-    }
+    
+    // Compression is useless as the data is encrypted
+    // #[cfg(feature = "deflate")]
+    // {
+    //     let deflate = soketto::extension::deflate::Deflate::new(soketto::Mode::Server);
+    //     server.add_extension(Box::new(deflate));
+    // }
 
     // Attempt the upgrade.
     let response = match server.receive_request(&req) {
