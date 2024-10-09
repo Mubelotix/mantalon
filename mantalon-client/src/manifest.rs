@@ -12,6 +12,7 @@ use web_sys::{window, ServiceWorkerGlobalScope};
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Manifest {
     pub domains: Vec<String>,
+    pub vpn: Option<String>,
     pub lock_browsing: Option<bool>,
     pub https_only: Option<bool>,
     pub rewrite_location: Option<bool>,
@@ -75,6 +76,7 @@ impl From<FileInsertion> for Vec<String> {
 #[derive(Debug)]
 pub struct ParsedManifest {
     pub domains: Vec<String>,
+    pub vpn: Option<String>,
     pub lock_browsing: bool,
     pub https_only: bool,
     pub rewrite_location: bool,
@@ -356,6 +358,7 @@ pub async fn update_manifest(manifest_url: String) -> Result<(), UpdateManifestE
     // Process some parts of the manifest
     let mut parsed_manifest = ParsedManifest {
         domains: manifest.domains,
+        vpn: manifest.vpn,
         lock_browsing: manifest.lock_browsing.unwrap_or(false),
         https_only: manifest.https_only.unwrap_or(false),
         rewrite_location: manifest.rewrite_location.unwrap_or(true),
@@ -427,6 +430,7 @@ impl Default for StaticManifest {
     fn default() -> Self {
         StaticManifest(UnsafeCell::new(ParsedManifest {
             domains: vec!["localhost".to_string()],
+            vpn: None,
             lock_browsing: false,
             https_only: false,
             rewrite_location: true,

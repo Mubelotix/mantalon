@@ -19,6 +19,7 @@ mod manifest;
 use manifest::*;
 mod body;
 mod cookies;
+mod vpn;
 pub use cookies::*;
 pub use body::*;
 

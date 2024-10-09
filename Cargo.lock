@@ -219,6 +219,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "98cc8fbded0c607b7ba9dd60cd98df59af97e84d24e49c8557331cfc26d301ce"
 
 [[package]]
+name = "cmake"
+version = "0.1.50"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a31c789563b815f77f4250caee12365734369f942439b7defd71e18a48197130"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "colorchoice"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -747,6 +756,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9c198f91728a82281a64e1f4f9eeb25d82cb32a5de251c6bd1b5154d63a8e7bd"
 
 [[package]]
+name = "libopenvpn3"
+version = "0.1.0"
+source = "git+https://github.com/lattice0/true_libopenvpn3_rust.git#83b34ddf60f45daa6ee5a91faf0b56c2d69cad4d"
+dependencies = [
+ "cmake",
+ "libc",
+ "simple_vpn",
+]
+
+[[package]]
 name = "libp2p-identity"
 version = "0.2.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -788,6 +807,7 @@ dependencies = [
  "hyper",
  "js-sys",
  "lazy_static",
+ "libopenvpn3",
  "pin-project-lite",
  "regex",
  "ring",
@@ -1240,6 +1260,11 @@ checksum = "a9e9e0b4211b72e7b8b6e85c807d36c212bdb33ea8587f7569562a84df5465b1"
 dependencies = [
  "libc",
 ]
+
+[[package]]
+name = "simple_vpn"
+version = "0.1.0"
+source = "git+https://github.com/lattice0/simple_vpn#234d53eb7981076154e1a91ff5949d6c32c2df76"
 
 [[package]]
 name = "slab"

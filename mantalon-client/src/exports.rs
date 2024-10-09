@@ -341,6 +341,10 @@ pub async fn init(manifest_url: String) {
     update_manifest(manifest_url).await.expect("Error updating manifest");
     open_cookie_storage().await;
 
+    if let Some(vpn) = MANIFEST.vpn {
+        init_vpn(vpn).await.expect("Error initializing VPN");
+    }
+
     debug!("Proxy library ready. Proxying {}", MANIFEST.domains.join(", "));
 }
 
