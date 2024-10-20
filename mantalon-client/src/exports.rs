@@ -1,6 +1,6 @@
 #![allow(non_snake_case)]
 
-use std::{borrow::BorrowMut, cell::UnsafeCell, rc::Rc};
+use std::{borrow::BorrowMut, cell::UnsafeCell, option, rc::Rc};
 use crate::*;
 use http::{HeaderName, HeaderValue, Method, Uri};
 use js_sys::{Array, ArrayBuffer, Function, Iterator, Map, Object, Promise, Reflect::{self, *}, Uint8Array};
@@ -67,8 +67,8 @@ pub async fn proxiedFetch(ressource: JsValue, options: JsValue) -> Result<JsValu
     let mut body = None;
     if let Some(options) = options.as_string() {
         url = options;
-    } else if let Ok(options) = options.dyn_into::<Map>() {
-        for entry in options.entries().into_iter().filter_map(|e| e.ok()).filter_map(|e| e.dyn_into::<Array>().ok()) {
+    } else if let Ok(options) = options.dyn_into::<Object>() {
+        for entry in Object::entries(&options).into_iter().filter_map(|e| e.dyn_into::<Array>().ok()) {
             let Some(key) = entry.get(0).as_string() else {
                 error!("Invalid key in options");
                 continue;
@@ -91,6 +91,9 @@ pub async fn proxiedFetch(ressource: JsValue, options: JsValue) -> Result<JsValu
                 unknown => error!("Unknown option: {}", unknown),
             }
         }
+    } else {
+        error!("Invalid options");
+        return Err(JsValue::from_str("Invalid options"));
     }
 
     // Read ressource
