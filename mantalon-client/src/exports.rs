@@ -4,8 +4,6 @@ use std::{cell::UnsafeCell, rc::Rc};
 use crate::*;
 use http::{HeaderName, HeaderValue, Method, Uri};
 use js_sys::{Array, ArrayBuffer, Function, Iterator, Map, Object, Promise, Reflect::{self, *}, Uint8Array};
-use url::Url;
-use urlpattern::UrlPatternMatchInput;
 use web_sys::Request;
 
 fn from_method(value: JsValue) -> Method {
@@ -55,15 +53,6 @@ fn from_headers(value: JsValue) -> http::HeaderMap::<http::HeaderValue> {
         headers.append(name, value);
     }
     headers
-}
-
-pub fn get_content_edit(request: &http::Request<MantalonBody>) -> Option<(usize, &'static ParsedContentEdit)> {
-    let url = Url::parse(&request.uri().to_string()).ok()?;
-    let pattern_match_input = UrlPatternMatchInput::Url(url);
-    MANIFEST.content_edits
-        .iter()
-        .enumerate()
-        .find(|(_, ce)| ce.matches.iter().any(|pattern| pattern.test(pattern_match_input.clone()).unwrap_or_default()))
 }
 
 /// Tries to replicate [fetch](https://developer.mozilla.org/en-US/docs/Web/API/fetch)
@@ -171,26 +160,6 @@ pub async fn proxiedFetch(ressource: JsValue, options: JsValue) -> Result<JsValu
     };
     *request.headers_mut() = headers;
 
-    // Get content edit
-    let (i, mut content_edit) = match get_content_edit(&request) {
-        Some(ce) => ce,
-        None => {
-            error!("No content edit found for {uri}");
-            return Err(JsValue::from_str("No content edit found"));
-        },
-    };
-    debug!("Using content edit {i} for {uri} request");
-
-    // Apply edit on request
-    content_edit.apply_on_request(&mut request);
-    content_edit = match get_content_edit(&request) {
-        Some(ce) => ce.1,
-        None => {
-            error!("No content edit found for {uri}");
-            return Err(JsValue::from_str("No content edit found"));
-        },
-    };
-
     // Add host header
     if let Some(authority) = uri.authority() {
         if let Ok(host) = authority.host().parse() {
@@ -199,16 +168,13 @@ pub async fn proxiedFetch(ressource: JsValue, options: JsValue) -> Result<JsValu
     }
 
     // Send request
-    let mut response = match proxied_fetch_with_global_cookies(request).await { // TODO: allow not using global cookies
+    let response = match proxied_fetch(request).await {
         Ok(response) => response,
         Err(error) => {
             error!("Error sending request: {error:?}");
             return Err(JsValue::from_str(&error.to_string()));
         },
     };
-
-    // Apply edit on response (without body)
-    content_edit.apply_on_response(&mut response);
 
     // Start converting response to JS
     let mut init = ResponseInit::new();
@@ -228,98 +194,57 @@ pub async fn proxiedFetch(ressource: JsValue, options: JsValue) -> Result<JsValu
     
     // Handle the response body
     let body = response.into_body();
-    if content_edit.needs_body_response() {
-        let mut body = read_entire_body(body).await.ok_or(JsValue::from_str("Error reading body"))?;
-        content_edit.apply_on_response_body(&mut body).await;
+    let underlying_source = Object::new();
 
-        'js_redirect: {
-            if content_edit.js_redirect {
-                let location = match headers.get("location") {
-                    Ok(Some(location)) => location,
-                    e => {
-                        error!("No location header to redirect to {e:?}");
-                        break 'js_redirect;
-                    }
-                };
-
-                let code = include_str!("../scripts/js_redirect.html");
-                let code = code.replace("locationToReplace", &location);
-                let len = code.len();
-                headers.set("content-length", &len.to_string()).unwrap();
-                headers.delete("location").unwrap();
-                headers.set("x-mantalon-location", &location).unwrap(); // FIXME: XSS
-                headers.set("content-type", "text/html").unwrap();
-                init.status(200);
-                
-                return Ok(Response::new_with_opt_str_and_init(Some(&code), &init)?.into());
-            }
-        }
-
-        match Response::new_with_opt_u8_array_and_init(Some(&mut body), &init) {
-            Ok(js_response) => Ok(js_response.into()),
-            Err(e) => {
-                error!("Error creating response: {e:?}");
-                Err(e)
-            },
-        }
-    } else {
-        let underlying_source = Object::new();
-
-        let body = Rc::new(UnsafeCell::new(body));
-        let pull = Closure::wrap(Box::new(move |controller: ReadableStreamDefaultController| -> Promise {
-            let body2 = Rc::clone(&body);
-            future_to_promise(async move {
-                let body = unsafe { &mut *body2.get() }; // This is safe because the browser will never call pull twice at the same time
-                let chunk = body.frame().await;
-                match chunk {
-                    Some(Ok(chunk)) => match chunk.into_data() {
-                        Ok(data) => {
-                            let data = Uint8Array::from(data.as_ref());
-                            controller.enqueue_with_chunk(&data.into())?;
-                        },
-                        Err(e) => {
-                            error!("Received non-data frame: {:?}", e);
-                            return Err(JsValue::NULL);
-                        }
+    let body = Rc::new(UnsafeCell::new(body));
+    let pull = Closure::wrap(Box::new(move |controller: ReadableStreamDefaultController| -> Promise {
+        let body2 = Rc::clone(&body);
+        future_to_promise(async move {
+            let body = unsafe { &mut *body2.get() }; // This is safe because the browser will never call pull twice at the same time
+            let chunk = body.frame().await;
+            match chunk {
+                Some(Ok(chunk)) => match chunk.into_data() {
+                    Ok(data) => {
+                        let data = Uint8Array::from(data.as_ref());
+                        controller.enqueue_with_chunk(&data.into())?;
                     },
-                    Some(Err(err)) => {
-                        error!("Error reading chunk: {:?}", err);
+                    Err(e) => {
+                        error!("Received non-data frame: {:?}", e);
                         return Err(JsValue::NULL);
-                    },
-                    None => {
-                        controller.close()?;
-                    },
-                }
-                Ok(JsValue::undefined())
-            })
-        }) as Box<dyn FnMut(ReadableStreamDefaultController) -> Promise>);
-        Reflect::set(&underlying_source, &JsValue::from_str("pull"), pull.as_ref())?;
-        let mut pull = Some(pull);
+                    }
+                },
+                Some(Err(err)) => {
+                    error!("Error reading chunk: {:?}", err);
+                    return Err(JsValue::NULL);
+                },
+                None => {
+                    controller.close()?;
+                },
+            }
+            Ok(JsValue::undefined())
+        })
+    }) as Box<dyn FnMut(ReadableStreamDefaultController) -> Promise>);
+    Reflect::set(&underlying_source, &JsValue::from_str("pull"), pull.as_ref())?;
+    let mut pull = Some(pull);
 
-        let cancel = Closure::wrap(Box::new(move |_| {
-            pull.take(); // Taking the closure and not doing anything with it will drop it
-        }) as Box<dyn FnMut(ReadableStreamDefaultController)>);
-        Reflect::set(&underlying_source, &JsValue::from_str("cancel"), cancel.as_ref())?;
-        cancel.forget(); // FIXME
+    let cancel = Closure::wrap(Box::new(move |_| {
+        pull.take(); // Taking the closure and not doing anything with it will drop it
+    }) as Box<dyn FnMut(ReadableStreamDefaultController)>);
+    Reflect::set(&underlying_source, &JsValue::from_str("cancel"), cancel.as_ref())?;
+    cancel.forget(); // FIXME
 
-        let readable_stream = ReadableStream::new_with_underlying_source(&underlying_source)?;
-        match Response::new_with_opt_readable_stream_and_init(Some(&readable_stream), &init) {
-            Ok(js_response) => Ok(js_response.into()),
-            Err(e) => {
-                error!("Error creating streaming response: {e:?}");
-                Err(e)
-            },
-        }
+    let readable_stream = ReadableStream::new_with_underlying_source(&underlying_source)?;
+    match Response::new_with_opt_readable_stream_and_init(Some(&readable_stream), &init) {
+        Ok(js_response) => Ok(js_response.into()),
+        Err(e) => {
+            error!("Error creating streaming response: {e:?}");
+            Err(e)
+        },
     }
 }
 
 #[wasm_bindgen]
-pub fn getProxiedDomains() -> Array {
-    Array::from_iter(MANIFEST.domains.iter().map(|d| JsValue::from_str(d)))
-}
-
-#[wasm_bindgen]
-pub async fn init(manifest_url: String) {
+pub async fn init() {
     std::panic::set_hook(Box::new(|panic_info| {
         if let Some(s) = panic_info.payload().downcast_ref::<&str>() {
             if let Some(location) = panic_info.location() {
@@ -338,13 +263,5 @@ pub async fn init(manifest_url: String) {
         }
     }));
 
-    update_manifest(manifest_url).await.expect("Error updating manifest");
-    open_cookie_storage().await;
-
-    debug!("Proxy library ready. Proxying {}", MANIFEST.domains.join(", "));
-}
-
-#[wasm_bindgen]
-pub async fn overrideCookie(name: String, value: String) {
-    GLOBAL_COOKIES.override_cookie(name, value).await;
+    debug!("Mantalon library is ready");
 }
