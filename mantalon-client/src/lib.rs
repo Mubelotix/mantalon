@@ -1,4 +1,5 @@
 #![allow(clippy::map_clone)]
+#![allow(clippy::await_holding_refcell_ref)] // Because of false positives
 
 use std::sync::Arc;
 use tokio_rustls::{rustls::{pki_types::{ServerName, IpAddr as RustlsIpAddr}, ClientConfig, RootCertStore}, TlsConnector};

@@ -1,6 +1,6 @@
 #![allow(non_snake_case)]
 
-use std::{cell::UnsafeCell, rc::Rc};
+use std::{borrow::BorrowMut, cell::UnsafeCell, rc::Rc};
 use crate::*;
 use http::{HeaderName, HeaderValue, Method, Uri};
 use js_sys::{Array, ArrayBuffer, Function, Iterator, Map, Object, Promise, Reflect::{self, *}, Uint8Array};
@@ -244,7 +244,7 @@ pub async fn proxiedFetch(ressource: JsValue, options: JsValue) -> Result<JsValu
 }
 
 #[wasm_bindgen]
-pub async fn init() {
+pub async fn init(mantalon_endpoint: String) {
     std::panic::set_hook(Box::new(|panic_info| {
         if let Some(s) = panic_info.payload().downcast_ref::<&str>() {
             if let Some(location) = panic_info.location() {
@@ -262,6 +262,8 @@ pub async fn init() {
             error!("panic occurred");
         }
     }));
+
+    MANTALON_ENDPOINT.set(mantalon_endpoint);
 
     debug!("Mantalon library is ready");
 }

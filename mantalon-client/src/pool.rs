@@ -1,4 +1,4 @@
-use std::{collections::HashMap, future::Future, io::Error as IoError, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, future::Future, io::Error as IoError, rc::Rc};
 use http::{Request, Response, Uri};
 use hyper::client::conn::http2::SendRequest;
 use tokio::sync::RwLock;
@@ -11,11 +11,7 @@ lazy_static!{
         connections: Default::default(),
     };
 
-    pub static ref SELF_ORIGIN: String = {
-        window().map(|w| w.location()).and_then(|l| l.origin().ok())
-            .or_else(|| js_sys::global().dyn_into::<WorkerGlobalScope>().ok().map(|d| d.location()).map(|l| l.origin()))
-            .expect("No window or worker location")
-    };
+    pub static ref MANTALON_ENDPOINT: EndpointUrl = EndpointUrl(Rc::new(RefCell::new(String::new())));
 }
 
 #[allow(clippy::type_complexity)]
@@ -26,8 +22,18 @@ pub struct Pool {
 unsafe impl Send for Pool {}
 unsafe impl Sync for Pool {}
 
+pub struct EndpointUrl(Rc<RefCell<String>>);
+unsafe impl Send for EndpointUrl {}
+unsafe impl Sync for EndpointUrl {}
+impl EndpointUrl {
+    pub fn set(&self, url: String) {
+        *self.0.borrow_mut() = url;
+    }
+}
+
 #[derive(Debug)]
 pub enum SendRequestError {
+    EndpointNotSet,
     NoScheme,
     UnsupportedScheme(String),
     NoHost,
@@ -43,6 +49,7 @@ pub enum SendRequestError {
 impl std::fmt::Display for SendRequestError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            SendRequestError::EndpointNotSet => write!(f, "Endpoint not set. Please call init before sending requests"),
             SendRequestError::NoScheme => write!(f, "No scheme in URI"),
             SendRequestError::UnsupportedScheme(scheme) => write!(f, "Unsupported scheme: {scheme}"),
             SendRequestError::NoHost => write!(f, "No host in URI"),
@@ -112,14 +119,17 @@ impl Pool {
         debug!("Opening connection to {}", multiaddr);
 
         // Open the websocket
-        let ws_url = match SELF_ORIGIN.starts_with("https://") {
-            true => format!("wss://{}/mantalon-connect/{}", SELF_ORIGIN.trim_start_matches("https://"), multiaddr),
-            false => format!("ws://{}/mantalon-connect/{}", SELF_ORIGIN.trim_start_matches("http://"), multiaddr),
-        };
+        let mantalon_endpoint = MANTALON_ENDPOINT.0.borrow();
+        if mantalon_endpoint.is_empty() {
+            return Err(SendRequestError::EndpointNotSet);
+        }
         let connections2 = Rc::clone(&self.connections);
         let multiaddr2 = multiaddr.clone();
         let on_close = || spawn_local(async move { connections2.write().await.remove(&multiaddr2); });
-        let websocket = WebSocket::new(&ws_url).map_err(SendRequestError::Websocket)?;
+        let websocket = WebSocket::new(&mantalon_endpoint).map_err(SendRequestError::Websocket)?;
+        std::mem::drop(mantalon_endpoint);
+
+        // Wrap the websocket
         let websocket = WrappedWebSocket::new(websocket, on_close);
         websocket.ready().await;
 
