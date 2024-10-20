@@ -138,6 +138,9 @@ impl Pool {
         // Wrap the websocket
         let websocket = WrappedWebSocket::new(websocket, on_close);
         websocket.ready().await;
+        if websocket.ready_state() != WebSocket::OPEN {
+            return Err(SendRequestError::Websocket(JsValue::from_str("Websocket not open")));
+        }
 
         let mut request_sender = if uri.scheme().map(|s| s.as_str()).unwrap_or_default() == "https" {
             // Encrypt stream :)

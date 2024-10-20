@@ -58,8 +58,16 @@ impl WrappedWebSocket {
 
         // Create close listener
         let mut on_close_inner = Some(on_close);
+        let read_waker2 = Rc::clone(&read_waker);
+        let open_waker3 = Rc::clone(&open_waker);
         let on_close = Closure::wrap(Box::new(move |_| {
-            error!("Websocket closed");
+            log!("Websocket closed");
+            if let Some(waker) = read_waker2.borrow_mut().as_ref() {
+                waker.wake_by_ref();
+            }
+            if let Some(waker) = open_waker3.borrow_mut().as_ref() {
+                waker.wake_by_ref();
+            }
             if let Some(on_close) = on_close_inner.take() {
                 on_close();
             }
@@ -67,8 +75,16 @@ impl WrappedWebSocket {
         ws.set_onclose(Some(on_close.as_ref().unchecked_ref()));
 
         // Create error listener
+        let read_waker3 = Rc::clone(&read_waker);
+        let open_waker4 = Rc::clone(&open_waker);
         let on_error = Closure::wrap(Box::new(move |_| {
             error!("Websocket error");
+            if let Some(waker) = read_waker3.borrow_mut().as_ref() {
+                waker.wake_by_ref();
+            }
+            if let Some(waker) = open_waker4.borrow_mut().as_ref() {
+                waker.wake_by_ref();
+            }
         }) as Box<dyn FnMut(Event)>);
         ws.set_onerror(Some(on_error.as_ref().unchecked_ref()));
 
@@ -102,6 +118,10 @@ impl WrappedWebSocket {
             _on_message: on_message,
             ws
         }
+    }
+
+    pub fn ready_state(&self) -> u16 {
+        self.ws.ready_state()
     }
 }
 
