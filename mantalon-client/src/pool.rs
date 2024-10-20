@@ -118,16 +118,22 @@ impl Pool {
         let (multiaddr, server_name) = get_server(uri)?;
         debug!("Opening connection to {}", multiaddr);
 
-        // Open the websocket
+        // Get the endpoint
         let mantalon_endpoint = MANTALON_ENDPOINT.0.borrow();
         if mantalon_endpoint.is_empty() {
             return Err(SendRequestError::EndpointNotSet);
         }
+        let ws_url = match mantalon_endpoint.ends_with('/') {
+            true => format!("{mantalon_endpoint}{multiaddr}"),
+            false => format!("{mantalon_endpoint}/{multiaddr}"),
+        };
+        std::mem::drop(mantalon_endpoint);
+
+        // Open the websocket
         let connections2 = Rc::clone(&self.connections);
         let multiaddr2 = multiaddr.clone();
         let on_close = || spawn_local(async move { connections2.write().await.remove(&multiaddr2); });
-        let websocket = WebSocket::new(&mantalon_endpoint).map_err(SendRequestError::Websocket)?;
-        std::mem::drop(mantalon_endpoint);
+        let websocket = WebSocket::new(&ws_url).map_err(SendRequestError::Websocket)?;
 
         // Wrap the websocket
         let websocket = WrappedWebSocket::new(websocket, on_close);
