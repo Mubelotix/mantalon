@@ -241,6 +241,12 @@ pub async fn proxiedFetch(ressource: JsValue, options: JsValue) -> Result<JsValu
     init.set_status(response.status().as_u16());
     let headers = Headers::new()?;
     for (name, value) in response.headers() {
+        let name = match name.as_str() {
+            "set-cookie" => "x-mantalon-set-cookie",
+            "set-cookie2" => "x-mantalon-set-cookie2",
+            name if name.starts_with("x-mantalon-") => continue, // The server is trying to trick the client
+            name => name,
+        };
         let value = match value.to_str() {
             Ok(value) => value,
             Err(e) => {
@@ -248,7 +254,7 @@ pub async fn proxiedFetch(ressource: JsValue, options: JsValue) -> Result<JsValu
                 continue;
             },
         };
-        headers.append(name.as_str(), value)?;
+        headers.append(name, value)?;
     }
     init.set_headers(&headers);
     
