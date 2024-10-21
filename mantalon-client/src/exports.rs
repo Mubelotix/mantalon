@@ -2,7 +2,7 @@
 
 use std::{borrow::BorrowMut, cell::UnsafeCell, option, rc::Rc};
 use crate::*;
-use http::{HeaderName, HeaderValue, Method, Uri};
+use http::{header, HeaderName, HeaderValue, Method, Uri};
 use js_sys::{Array, ArrayBuffer, Function, Iterator, Map, Object, Promise, Reflect::{self, *}, Uint8Array};
 use web_sys::Request;
 
@@ -30,18 +30,11 @@ fn from_method(value: JsValue) -> Method {
 
 fn from_headers(value: JsValue) -> http::HeaderMap::<http::HeaderValue> {
     let mut headers = http::HeaderMap::<http::HeaderValue>::new();
-    let entries = get(&value, &JsValue::from_str("entries")).ok()
-        .and_then(|f| f.dyn_into::<Function>().ok())
-        .and_then(|f| apply(&f, &value, &Array::new()).ok())
-        .and_then(|a| a.dyn_into::<Iterator>().ok());
-    let entries = match entries {
-        Some(entries) => entries,
-        None => {
-            error!("Invalid headers");
-            return headers;
-        },
+    let Ok(js_headers) = value.dyn_into::<Headers>() else {
+        error!("Invalid headers");
+        return headers;
     };
-    for entry in entries.into_iter().filter_map(|e| e.ok()).filter_map(|e| e.dyn_into::<Array>().ok()) {
+    for entry in js_headers.entries().into_iter().filter_map(|e| e.ok()).filter_map(|e| e.dyn_into::<Array>().ok()) {
         let Some(name): Option<HeaderName> = entry.get(0).as_string().and_then(|n| n.parse().ok()) else {
             error!("Invalid header name");
             continue;
@@ -55,6 +48,59 @@ fn from_headers(value: JsValue) -> http::HeaderMap::<http::HeaderValue> {
     headers
 }
 
+async fn from_body(value: JsValue) -> Option<(MantalonBody, String)> {
+    if let Some(string_body) = value.as_string() {
+        let body = MantalonBody::Known { data: Some(string_body.into_bytes().into()) };
+        let default_content_type = String::from("text/plain");
+        Some((body, default_content_type))
+    } else if let Some(array_buffer) = value.dyn_ref::<ArrayBuffer>() {
+        let array = Uint8Array::new(array_buffer);
+        let body = MantalonBody::Known { data: Some(array.to_vec().into()) };
+        let default_content_type = String::from("application/octet-stream");
+        Some((body, default_content_type))
+    } else if let Some(blob) = value.dyn_ref::<web_sys::Blob>() {
+        let array_buffer_promise = blob.array_buffer();
+        let array_buffer = JsFuture::from(array_buffer_promise).await.expect("arrayBuffer promise must resolve");
+        let array = Uint8Array::new(&array_buffer);
+        let body = MantalonBody::Known { data: Some(array.to_vec().into()) };
+        let default_content_type = blob.type_();
+        Some((body, default_content_type))
+    } else if let Some(file) = value.dyn_ref::<web_sys::File>() {
+        let array_buffer_promise = file.array_buffer();
+        let array_buffer = JsFuture::from(array_buffer_promise).await.expect("arrayBuffer promise must resolve");
+        let array = Uint8Array::new(&array_buffer);
+        let body = MantalonBody::Known { data: Some(array.to_vec().into()) };
+        let default_content_type = file.type_();
+        Some((body, default_content_type))
+    } else if let Some(file) = value.dyn_ref::<web_sys::FormData>() {
+        let mut form = Vec::new();
+        for entry in file.entries().into_iter().filter_map(|e| e.ok()).filter_map(|e| e.dyn_into::<Array>().ok()) {
+            let Some(name): Option<String> = entry.get(0).as_string() else {
+                error!("Invalid form field name");
+                continue;
+            };
+            let Some(value): Option<String> = entry.get(1).as_string() else {
+                error!("Invalid form field value");
+                continue;
+            };
+            form.push((name, value));
+        }
+        let body = MantalonBody::FormData { form };
+        let default_content_type = String::from("application/x-www-form-urlencoded");
+        Some((body, default_content_type))
+    } else if let Some(readable_stream) = value.dyn_ref::<ReadableStream>() {
+        let body = MantalonBody::from(readable_stream);
+        let default_content_type = String::from("application/octet-stream");
+        Some((body, default_content_type))
+    } else if let Some(_search_params) = value.dyn_ref::<web_sys::UrlSearchParams>() {
+        error!("searchParams not supported yet");
+        None
+    } else {
+        error!("Unsupported body type: {value:?}");
+        None
+    }
+}
+
 /// Tries to replicate [fetch](https://developer.mozilla.org/en-US/docs/Web/API/fetch)
 /// 
 /// Difference: when you set options to a string, it will override the URL.
@@ -62,6 +108,7 @@ fn from_headers(value: JsValue) -> http::HeaderMap::<http::HeaderValue> {
 pub async fn proxiedFetch(ressource: JsValue, options: JsValue) -> Result<JsValue, JsValue> {
     // Read options
     let mut headers = http::HeaderMap::<http::HeaderValue>::new();
+    let mut default_content_type = None;
     let mut method = Method::GET;
     let mut url = String::new();
     let mut body = None;
@@ -76,7 +123,10 @@ pub async fn proxiedFetch(ressource: JsValue, options: JsValue) -> Result<JsValu
             let value = entry.get(1);
     
             match key.as_str() {
-                "body" => error!("body not supported yet"),
+                "body" => if let Some((b, c)) = from_body(value).await {
+                    body = Some(b);
+                    default_content_type = Some(c);
+                },
                 "cache" => error!("cache not supported yet"),
                 "credentials" => error!("credentials not supported yet"),
                 "headers" => headers = from_headers(value),
@@ -107,8 +157,8 @@ pub async fn proxiedFetch(ressource: JsValue, options: JsValue) -> Result<JsValu
                     url = request.url();
                 }
                 headers = from_headers(request.headers().into());
-                body = request.body().map(|b| b.into());
-                if body.is_none() { // Some shitty browsers don't support body
+                body = request.body().as_ref().map(|b| b.into());
+                if body.is_none() { // Some browsers don't support body
                     if let Ok(array_buffer_promise) = request.array_buffer() {
                         if let Ok(array_buffer) = JsFuture::from(array_buffer_promise).await {
                             if let Ok(array_buffer) = array_buffer.dyn_into::<ArrayBuffer>() {
@@ -161,6 +211,11 @@ pub async fn proxiedFetch(ressource: JsValue, options: JsValue) -> Result<JsValu
             },
         },
     };
+    if headers.get(header::CONTENT_TYPE).is_none() {
+        if let Some(default_content_type) = default_content_type {
+            headers.insert(header::CONTENT_TYPE, default_content_type.parse().unwrap());
+        }
+    }
     *request.headers_mut() = headers;
 
     // Add host header
@@ -180,8 +235,8 @@ pub async fn proxiedFetch(ressource: JsValue, options: JsValue) -> Result<JsValu
     };
 
     // Start converting response to JS
-    let mut init = ResponseInit::new();
-    init.status(response.status().as_u16());
+    let init = ResponseInit::new();
+    init.set_status(response.status().as_u16());
     let headers = Headers::new()?;
     for (name, value) in response.headers() {
         let value = match value.to_str() {
@@ -193,7 +248,7 @@ pub async fn proxiedFetch(ressource: JsValue, options: JsValue) -> Result<JsValu
         };
         headers.append(name.as_str(), value)?;
     }
-    init.headers(&headers);
+    init.set_headers(&headers);
     
     // Handle the response body
     let body = response.into_body();

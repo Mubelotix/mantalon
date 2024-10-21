@@ -1,7 +1,7 @@
-use std::{collections::VecDeque, future::Future, pin::Pin, task::{Context, Poll}, fmt};
+use std::{collections::{HashMap, VecDeque}, fmt, future::Future, pin::Pin, task::{Context, Poll}};
 use crate::*;
 use hyper::body::Frame;
-use js_sys::{Object, Reflect, Uint8Array};
+use js_sys::{encode_uri_component, Object, Reflect, Uint8Array};
 use pin_project_lite::pin_project;
 
 pin_project! {
@@ -9,6 +9,7 @@ pin_project! {
     #[project = MantalonBodyProj]
     pub enum MantalonBody {
         Empty,
+        FormData { form: Vec<(String, String)> },
         Known { data: Option<VecDeque<u8>> },
         ReadableStream { reader: ReadableStreamDefaultReader, #[pin] fut: JsFuture, },
     }
@@ -18,6 +19,11 @@ impl fmt::Debug for MantalonBody {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             MantalonBody::Empty => f.debug_struct("MantalonBody::Empty").finish(),
+            MantalonBody::FormData { form } => {
+                let mut debug = f.debug_struct("MantalonBody::FormData");
+                form.iter().for_each(|(k, v)| {debug.field(k, v);});
+                debug.finish()
+            },
             MantalonBody::Known { .. } => f.debug_struct("MantalonBody::Known").finish_non_exhaustive(),
             MantalonBody::ReadableStream { .. } => f.debug_struct("MantalonBody::ReadableStream").finish_non_exhaustive()
         }
@@ -44,8 +50,8 @@ impl fmt::Display for MantalonBodyError {
 impl std::error::Error for MantalonBodyError {}
 
 /// Allow conversion from a `ReadableStream` to a `MantalonBody`.
-impl From<ReadableStream> for MantalonBody {
-    fn from(stream: ReadableStream) -> Self {
+impl From<&ReadableStream> for MantalonBody {
+    fn from(stream: &ReadableStream) -> Self {
         let reader = stream.get_reader();
         let reader = reader.dyn_into::<ReadableStreamDefaultReader>().expect("getReader() must return a ReadableStreamDefaultReader");
         MantalonBody::ReadableStream {
@@ -65,6 +71,16 @@ impl Body for MantalonBody {
     ) -> Poll<Option<Result<hyper::body::Frame<Self::Data>, Self::Error>>> {
         match self.project() {
             MantalonBodyProj::Empty => Poll::Ready(None),
+            MantalonBodyProj::FormData { form } => {
+                let data = form.iter().fold(VecDeque::new(), |mut acc, (k, v)| {
+                    acc.extend(encode_uri_component(k).as_string().unwrap_or_default().as_bytes());
+                    acc.push_back(b'=');
+                    acc.extend(encode_uri_component(v).as_string().unwrap_or_default().as_bytes());
+                    acc.push_back(b'&');
+                    acc
+                });
+                Poll::Ready(Some(Ok(Frame::data(data))))
+            },
             MantalonBodyProj::Known { data } => match data.take() {
                 Some(data) => Poll::Ready(Some(Ok(Frame::data(data)))),
                 None => Poll::Ready(None),
