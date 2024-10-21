@@ -1,7 +1,7 @@
 use std::{cell::RefCell, collections::HashMap, future::Future, io::Error as IoError, rc::Rc};
 use http::{Request, Response, Uri};
-use hyper::client::conn::http2::SendRequest;
-use tokio::sync::RwLock;
+use hyper::client::conn::{http1::SendRequest as SendRequest1, http2::SendRequest as SendRequest2};
+use tokio::sync::{Mutex, RwLock};
 use tokio_rustls::rustls::pki_types::InvalidDnsNameError;
 use crate::*;
 use lazy_static::lazy_static;
@@ -12,6 +12,36 @@ lazy_static!{
     };
 
     pub static ref MANTALON_ENDPOINT: EndpointUrl = EndpointUrl(Rc::new(RefCell::new(String::new())));
+}
+
+enum SendRequest<B> {
+    H1(Arc<Mutex<SendRequest1<B>>>),
+    H2(SendRequest2<B>),
+}
+
+impl<B: Body + 'static> SendRequest<B> {
+    async fn ready(&mut self) -> std::result::Result<(), hyper::Error> {
+        match self {
+            SendRequest::H1(r) => r.lock().await.ready().await,
+            SendRequest::H2(r) => r.ready().await,
+        }
+    }
+
+    async fn send_request(&mut self, req: Request<B>) -> Result<http::Response<Incoming>, hyper::Error> {
+        match self {
+            SendRequest::H1(r) => r.lock().await.send_request(req).await,
+            SendRequest::H2(r) => r.send_request(req).await,
+        }
+    }
+}
+
+impl<B> Clone for SendRequest<B> {
+    fn clone(&self) -> Self {
+        match self {
+            SendRequest::H1(r) => SendRequest::H1(Arc::clone(r)),
+            SendRequest::H2(r) => SendRequest::H2(r.clone()),
+        }
+    }
 }
 
 #[allow(clippy::type_complexity)]
@@ -35,6 +65,7 @@ impl EndpointUrl {
 pub enum SendRequestError {
     EndpointNotSet,
     NoScheme,
+    NoCommonProtocol,
     UnsupportedScheme(String),
     NoHost,
     ServerNameParseError(InvalidDnsNameError),
@@ -51,6 +82,7 @@ impl std::fmt::Display for SendRequestError {
         match self {
             SendRequestError::EndpointNotSet => write!(f, "Endpoint not set. Please call init before sending requests"),
             SendRequestError::NoScheme => write!(f, "No scheme in URI"),
+            SendRequestError::NoCommonProtocol => write!(f, "The server and client do not have a common protocol"),
             SendRequestError::UnsupportedScheme(scheme) => write!(f, "Unsupported scheme: {scheme}"),
             SendRequestError::NoHost => write!(f, "No host in URI"),
             SendRequestError::ServerNameParseError(e) => write!(f, "Error parsing server name: {e}"),
@@ -146,39 +178,59 @@ impl Pool {
             // Encrypt stream :)
             let mut root_cert_store = RootCertStore::empty();
             root_cert_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-            let mut config = ClientConfig::builder()
+            let mut config = ClientConfig::builder_with_protocol_versions(tokio_rustls::rustls::ALL_VERSIONS)
                 .with_root_certificates(root_cert_store)
                 .with_no_client_auth();
             config.alpn_protocols.push(b"h2".to_vec());
             config.alpn_protocols.push(b"http/1.1".to_vec());
             let connector = TlsConnector::from(Arc::new(config));
             let stream = connector.connect(server_name, websocket).await.map_err(SendRequestError::TlsConnect)?;
+            let alpn_protocol = stream.get_ref().1.alpn_protocol().map(|s| s.to_vec());
             let stream = TokioIo::new(stream);
-            let (request_sender, connection) = conn::http2::Builder::new(WasmExecutor)
-                .max_concurrent_reset_streams(0)
-                .handshake(stream).await.map_err(SendRequestError::HttpHandshake)?;
-        
-            // Spawn a task to poll the connection and drive the HTTP state
-            spawn_local(async move {
-                if let Err(e) = connection.await {
-                    error!("Error in connection: {}", e);
-                }
-            });
+            
+            match alpn_protocol.as_deref() {
+                Some(b"h2") => {
+                    let (request_sender, connection) = conn::http2::Builder::new(WasmExecutor)
+                        .max_concurrent_reset_streams(0)
+                        .handshake(stream).await
+                        .map_err(SendRequestError::HttpHandshake)?;
 
-            request_sender
+                    // Spawn a task to poll the connection and drive the HTTP2 state
+                    spawn_local(async move {
+                        if let Err(e) = connection.await {
+                            error!("Error in connection: {}", e);
+                        }
+                    });
+                    
+                    SendRequest::H2(request_sender)
+                },
+                Some(b"http/1.1") => {
+                    let (request_sender, connection) = conn::http1::handshake(stream).await.map_err(SendRequestError::HttpHandshake)?;
+
+                    // Spawn a task to poll the connection and drive the HTTP1 state
+                    spawn_local(async move {
+                        if let Err(e) = connection.await {
+                            error!("Error in connection: {}", e);
+                        }
+                    });
+
+                    SendRequest::H1(Arc::new(Mutex::new(request_sender)))
+                },
+                _ => return Err(SendRequestError::NoCommonProtocol),
+            }
         } else {
             // Don't encrypt stream :(
             let stream = TokioIo::new(websocket);
-            let (request_sender, connection) = conn::http2::handshake(WasmExecutor, stream).await.map_err(SendRequestError::HttpHandshake)?;
-        
-            // Spawn a task to poll the connection and drive the HTTP state
+            let (request_sender, connection) = conn::http1::handshake(stream).await.map_err(SendRequestError::HttpHandshake)?;
+
+            // Spawn a task to poll the connection and drive the HTTP1 state
             spawn_local(async move {
                 if let Err(e) = connection.await {
                     error!("Error in connection: {}", e);
                 }
             });
 
-            request_sender
+            SendRequest::H1(Arc::new(Mutex::new(request_sender)))
         };
 
         // Store the connection
@@ -206,7 +258,8 @@ impl Pool {
             Some(t) => {
                 debug!("Reusing connection to {}", multiaddr);
                 
-                let mut conn = t.clone();
+                let mut conn = SendRequest::clone(t);
+                std::mem::drop(connections);
                 let ready = conn.ready().await;
                 if ready.is_err() {
                     return self.send_request_new_stream(request).await;
