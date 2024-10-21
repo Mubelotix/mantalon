@@ -16,6 +16,10 @@ mod websocket;
 use websocket::*;
 mod pool;
 use pool::*;
+mod executor;
+pub use executor::*;
+mod sender;
+pub use sender::*;
 mod body;
 pub use body::*;
 
