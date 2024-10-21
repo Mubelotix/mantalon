@@ -144,15 +144,23 @@ impl Pool {
 
         let mut request_sender = if uri.scheme().map(|s| s.as_str()).unwrap_or_default() == "https" {
             // Encrypt stream :)
-            let mut root_cert_store = RootCertStore::empty();
-            root_cert_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-            let mut config = ClientConfig::builder()
-                .with_root_certificates(root_cert_store)
-                .with_no_client_auth();
-            config.alpn_protocols.push(b"h2".to_vec());
-            config.alpn_protocols.push(b"http/1.1".to_vec());
-            let connector = TlsConnector::from(Arc::new(config));
-            let stream = connector.connect(server_name, websocket).await.map_err(SendRequestError::TlsConnect)?;
+            // let mut root_cert_store = RootCertStore::empty();
+            // root_cert_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+            // let mut config = ClientConfig::builder()
+            //     .with_root_certificates(root_cert_store)
+            //     .with_no_client_auth();
+            // config.alpn_protocols.push(b"h2".to_vec());
+            // config.alpn_protocols.push(b"http/1.1".to_vec());
+            // let connector = TlsConnector::from(Arc::new(config));
+            // let stream = connector.connect(server_name, websocket).await.map_err(SendRequestError::TlsConnect)?;
+
+            let connector = boring::ssl::SslConnector::builder(boring::ssl::SslMethod::tls()).unwrap().build();
+            let config = connector.configure().unwrap();
+            let stream = match tokio_boring::connect(config, uri.host().unwrap(), websocket).await {
+                Ok(stream) => stream,
+                Err(e) => panic!("wut"),
+            };
+
             let stream = TokioIo::new(stream);
             let (request_sender, connection) = conn::http2::Builder::new(WasmExecutor)
                 .max_concurrent_reset_streams(0)

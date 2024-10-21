@@ -16,6 +16,8 @@ bytes = "1.6.0"
 http = "1.1.0"
 http-body-util = "0.1.1"
 tokio-rustls = {version="0.26", default-features=false, features=["ring"]}
+boring = "4.11"
+tokio-boring = "4.11"
 webpki-roots = "0.26"
 pin-project-lite = "0.2.14"
 lazy_static = "1.4.0"
