@@ -6,6 +6,13 @@ Moreover, Mantalon stands as a **privacy-preserving** solution, safeguarding the
 
 Notably, all code modifications and injections are executed solely on the client side, making it particularly well-suited for open-source projects.
 
+## Project organization
+
+This project is divided into three main components usable independently:
+- `mantalon-server`: A server allowing opening TCP and UDP connections through websockets.
+- `mantalon-client`: A client library providing a high-level API to interact with the server, notably a proxiedFetch function behaving like the native fetch function.
+- `mantalon-portal`: A configurable service that you can use to create a live copy of any target website on your server, giving the ability to inject custom scripts, styles, and more, in a webextension-like fashion.
+
 ## Technical details
 
 Three actors are involved in the Mantalon architecture:
@@ -62,4 +69,3 @@ These libraries boast a track record of not just security but also efficiency, t
     ]
 }
 ```
-
