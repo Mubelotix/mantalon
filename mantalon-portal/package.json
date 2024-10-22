@@ -1,12 +1,20 @@
 {
   "name": "mantalon-portal",
   "version": "1.0.0",
-  "description": "",
-  "main": "sw.js",
+  "description": "Mantalon-Portal is a tool enabling the creation of live copies of any target website, with the ability to inject custom scripts, styles, and more, in a webextension-like fashion.",
+  "main": "index.js",
   "scripts": {
+    "bundle": "node bundle.mjs",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
+  "dependencies": {
+    "marked": "^14.1.3"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0",
+    "@types/node": "^22.7.8"
+  }
 }
