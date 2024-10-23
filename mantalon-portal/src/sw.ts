@@ -12,21 +12,31 @@ function orDefault(value: any, fallback: any) {
     return value !== undefined ? value : fallback;
 }
 
+var clientOrigins = new Map<string, string>();
+
 var initSuccess = false;
 var initError = null;
 var manifest: Manifest;
 var globalProxiedFetch: ProxiedFetchType;
 
-function setCurrentHost(host: string) {
-
-}
-
 async function proxy(event: FetchEvent): Promise<Response> {
     let url = new URL(event.request.url);
     url.host = manifest.targets[0];
+    if (url.origin === self.location.origin) {
+        let clientOrigin = clientOrigins.get(event.clientId);
+        if (!clientOrigin) {
+            clientOrigin = manifest.targets[0];
+            clientOrigins.set(event.clientId, clientOrigin);
+        }
+        url.protocol = clientOrigin.substring(0, clientOrigin.indexOf(":"));
+        url.host = clientOrigin.substring(clientOrigin.indexOf(":") + 3);
+    }
     if (!manifest.targets[0].includes(':')) {
         url.port = "443";
         url.protocol = "https:";
+    }
+    if (event.resultingClientId) {
+        clientOrigins.set(event.resultingClientId, url.origin);
     }
 
     let proxy_config = manifest.proxy_urls?.find((conf) => conf.matches.some((pattern) => pattern.test(url)));
@@ -49,7 +59,7 @@ async function proxy(event: FetchEvent): Promise<Response> {
         if (location) {
             let newLocation = new URL(location, url);
             if (manifest.targets.includes(newLocation.host)) {
-                setCurrentHost(newLocation.host);
+                clientOrigins.set(event.clientId, newLocation.origin);
                 newLocation.host = self.location.host;
                 newLocation.protocol = self.location.protocol;
             }

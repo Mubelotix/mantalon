@@ -1,5 +1,5 @@
 {
-    "targets": ["en.wikipedia.org", "fr.wikipedia.org"],
+    "targets": ["https://en.wikipedia.org", "https://fr.wikipedia.org"],
     "server_endpoint": "http://127.0.0.1:8000/mantalon-connect",
 
 
