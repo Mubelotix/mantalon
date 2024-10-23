@@ -139,7 +139,7 @@ export interface Manifest {
 async function loadManifestFromNetwork(): Promise<Manifest> {
     const response = await fetch("/mantalon/config/manifest.json");
     let cache = await caches.open("mantalon-sw-files");
-    cache.put("/mantalon/config/manifest.json", response);
+    cache.put("/mantalon/config/manifest.json", response.clone());
     return response.json();
 }
 
