@@ -1,7 +1,7 @@
 import esbuild from 'esbuild';
 
 esbuild.build({
-  entryPoints: ['./sw.js'],
+  entryPoints: ['./src/sw.ts'],
   bundle: true,
   outfile: './sw_bundle.js',
   format: 'iife',

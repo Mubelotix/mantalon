@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "bundle": "node bundle.mjs",
-    "watch": "chokidar 'sw.js' -d 20000 -c 'npm run bundle'"
+    "watch": "chokidar './src' -d 20000 -c 'npm run bundle'"
   },
   "keywords": [],
   "author": "",

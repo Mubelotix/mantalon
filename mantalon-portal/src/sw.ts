@@ -1,7 +1,9 @@
 /// <reference lib="WebWorker" />
-/// <reference path="node_modules/mantalon-client/mantalon_client.d.ts" />
+/// <reference path="../node_modules/mantalon-client/mantalon_client.d.ts" />
 export type {};
 declare let self: ServiceWorkerGlobalScope;
+
+import { } from "./manifest";
 
 var initSuccess = false;
 var initError = null;
