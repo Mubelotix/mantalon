@@ -1,7 +1,12 @@
 {
     "targets": ["https://en.wikipedia.org", "https://fr.wikipedia.org"],
     "server_endpoint": "http://127.0.0.1:8000/mantalon-connect",
-
+    "rewrites": [
+        {
+            "matches": ["http://google.com"],
+            "destination": "/wiki/Shaitan"
+        }
+    ],
 
 
     "landing_page": "landing.html",

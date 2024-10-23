@@ -21,19 +21,19 @@ var globalProxiedFetch: ProxiedFetchType;
 
 async function proxy(event: FetchEvent): Promise<Response> {
     let url = new URL(event.request.url);
-    url.host = manifest.targets[0];
     if (url.origin === self.location.origin) {
         let clientOrigin = clientOrigins.get(event.clientId);
         if (!clientOrigin) {
             clientOrigin = manifest.targets[0];
             clientOrigins.set(event.clientId, clientOrigin);
         }
-        url.protocol = clientOrigin.substring(0, clientOrigin.indexOf(":"));
-        url.host = clientOrigin.substring(clientOrigin.indexOf(":") + 3);
-    }
-    if (!manifest.targets[0].includes(':')) {
-        url.port = "443";
-        url.protocol = "https:";
+        let protocol = clientOrigin.substring(0, clientOrigin.indexOf(":"));
+        let host = clientOrigin.substring(clientOrigin.indexOf(":") + 3);
+        url.protocol = protocol;
+        url.host = host;
+        if (!host.includes(':')) {
+            url.port = "443"; // TODO: refine port depending on protocol
+        }
     }
     if (event.resultingClientId) {
         clientOrigins.set(event.resultingClientId, url.origin);
@@ -41,6 +41,7 @@ async function proxy(event: FetchEvent): Promise<Response> {
 
     let proxy_config = manifest.proxy_urls?.find((conf) => conf.matches.some((pattern) => pattern.test(url)));
     if (!proxy_config) {
+        console.log("No proxy config found for ", url);
         return await fetch(event.request);
     }
 
@@ -53,21 +54,16 @@ async function proxy(event: FetchEvent): Promise<Response> {
     let headers = new Headers(initialResponse.headers);
 
     if (orDefault(proxy_config.rewrite_location, true)) {
-        console.log("Rewriting location headers");
         let location = headers.get("location");
-        console.log("Location: ", location);
         if (location) {
             let newLocation = new URL(location, url);
-            if (manifest.targets.includes(newLocation.host)) {
+            if (manifest.targets.includes(newLocation.origin)) {
                 clientOrigins.set(event.clientId, newLocation.origin);
                 newLocation.host = self.location.host;
                 newLocation.protocol = self.location.protocol;
+                newLocation.port = self.location.port;
             }
             headers.set("location", newLocation.toString());
-
-            console.log("New Location: ", newLocation.toString());
-        } else {
-            console.log("No location header found");
         }
     }
     
@@ -89,11 +85,11 @@ self.addEventListener("fetch", (event: FetchEvent) => {
 });
 
 self.addEventListener("install", (event) => {
-  self.skipWaiting();
+    self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
-    self.clients.claim();
+    event.waitUntil(self.clients.claim());
 });
 
 self.addEventListener('message', event => {
