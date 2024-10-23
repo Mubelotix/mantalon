@@ -3,7 +3,8 @@
 export type {};
 declare let self: ServiceWorkerGlobalScope;
 
-import { } from "./manifest";
+import { loadManifest } from "./manifest";
+import { URLPattern } from "urlpattern-polyfill"; // TODO: When URLPatterns reaches baseline, remove this polyfill
 
 var initSuccess = false;
 var initError = null;
@@ -32,12 +33,19 @@ self.addEventListener('message', event => {
     }
 });
 
+async function initConfig() {
+    let manifest = await loadManifest();
+    console.log("Loaded manifest", manifest);
+}
+
+initConfig();
+
 try {
-    importScripts("/node_modules/mantalon-client/mantalon_client.js");
+    importScripts("/mantalon/mantalon_client.js");
 
     const { init, proxiedFetch } = wasm_bindgen;
     async function run() {
-        await wasm_bindgen("/node_modules/mantalon-client/mantalon_client_bg.wasm");
+        await wasm_bindgen("/mantalon/mantalon_client_bg.wasm");
         await init("http://localhost:1234/mantalon-connect");
         initSuccess = true;
         console.log("Successfully initialized Mantalon. Proxying ");

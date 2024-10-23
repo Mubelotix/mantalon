@@ -113,3 +113,20 @@ export interface Manifest {
 
     // TODO: Add cache features
 }
+
+async function loadManifestFromNetwork(): Promise<Manifest> {
+    const response = await fetch("/mantalon/config/manifest.json");
+    let cache = await caches.open("mantalon-sw-files");
+    cache.put("/mantalon/config/manifest.json", response);
+    return response.json();
+}
+
+export async function loadManifest(): Promise<Manifest> {
+    try {
+        return loadManifestFromNetwork();
+    } catch {
+        let cache = await caches.open("mantalon-sw-files");
+        let request = await cache.match("/mantalon/config/manifest.json");
+        return request?.json(); // Fixme: Investigate why we don't have to add undefined to the signature?
+    }
+}
