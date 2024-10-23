@@ -4,7 +4,7 @@ export type {};
 declare let self: ServiceWorkerGlobalScope;
 
 import { config } from "process";
-import { loadManifest, Manifest } from "./manifest";
+import { loadManifest, Manifest, RewriteConfig } from "./manifest";
 import { URLPattern } from "urlpattern-polyfill"; // TODO: When URLPatterns reaches baseline, remove this polyfill
 type ProxiedFetchType = (arg1: any, arg2?: any) => Promise<Response>;
 
@@ -20,6 +20,7 @@ var manifest: Manifest;
 var globalProxiedFetch: ProxiedFetchType;
 
 async function proxy(event: FetchEvent): Promise<Response> {
+    // Get the actual URL of the request
     let url = new URL(event.request.url);
     if (url.origin === self.location.origin) {
         let clientOrigin = clientOrigins.get(event.clientId);
@@ -39,6 +40,49 @@ async function proxy(event: FetchEvent): Promise<Response> {
         clientOrigins.set(event.resultingClientId, url.origin);
     }
 
+    // Rewrite the URL if necessary
+    if (manifest.rewrites) {
+        let rewrite_config: RewriteConfig | undefined = undefined;
+        let rewrite_match: URLPatternResult | undefined = undefined;
+        for (let rewrite of manifest.rewrites) {
+            for (let pattern of rewrite.matches) {
+                let result = pattern.exec(url);
+                if (result) {
+                    rewrite_config = rewrite;
+                    rewrite_match = result;
+                    break;
+                }
+            }
+            if (rewrite_match) {
+                break;
+            }
+        }
+        if (rewrite_config && rewrite_match) {
+            let newUrl = new URL(rewrite_config.destination);
+            let array: [{ [key: string]: string | undefined; }, string][] = [
+                [rewrite_match.protocol.groups, "protocol"],
+                [rewrite_match.username.groups, "username"],
+                [rewrite_match.password.groups, "password"],
+                [rewrite_match.hostname.groups, "hostname"],
+                [rewrite_match.port.groups, "port"],
+                [rewrite_match.pathname.groups, "pathname"],
+                [rewrite_match.search.groups, "search"],
+                [rewrite_match.hash.groups, "hash"],
+            ]
+            for (let [groups, target] of array) {
+                for (let key in groups) {
+                    newUrl[target] = newUrl[target].replace(`:${key}`, groups[key] || "");
+                }
+            }
+            if (orDefault(rewrite_config.redirect, false)) {
+                return Response.redirect(newUrl);
+            } else {
+                url = newUrl;
+            }
+        }
+    }
+
+    // Find the proxy config for the URL
     let proxy_config = manifest.proxy_urls?.find((conf) => conf.matches.some((pattern) => pattern.test(url)));
     if (!proxy_config) {
         console.log("No proxy config found for ", url);

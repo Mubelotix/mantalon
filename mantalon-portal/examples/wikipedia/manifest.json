@@ -3,8 +3,9 @@
     "server_endpoint": "http://127.0.0.1:8000/mantalon-connect",
     "rewrites": [
         {
-            "matches": ["http://google.com"],
-            "destination": "/wiki/Shaitan"
+            "matches": ["http://upload.wikimedia.org/:path*"],
+            "destination": "https://upload.wikimedia.org/:path",
+            "redirect": true
         }
     ],
 

@@ -230,6 +230,9 @@ export class RewriteConfig extends UrlMatcher {
     /// The URL to load instead of the original one
     destination: string;
 
+    /// Whether to quietly rewrite the URL or redirect the request. Defaults to false.
+    redirect?: boolean;
+
     constructor(data: any) {
         super(data);
 
@@ -237,6 +240,11 @@ export class RewriteConfig extends UrlMatcher {
             throw new Error("RewriteConfig.destination must be a string");
         }
         this.destination = data.destination;
+
+        if (data.redirect && typeof data.redirect !== "boolean") {
+            throw new Error("RewriteConfig.redirect must be a boolean");
+        }
+        this.redirect = data.redirect
     }
 }
 
