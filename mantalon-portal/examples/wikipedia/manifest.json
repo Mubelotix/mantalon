@@ -1,5 +1,5 @@
 {
-    "targets": ["chat.openai.com", "en.wikipedia.org", "fr.wikipedia.org"],
+    "targets": ["en.wikipedia.org", "fr.wikipedia.org"],
     "server_endpoint": "http://127.0.0.1:8000/mantalon-connect",
 
 

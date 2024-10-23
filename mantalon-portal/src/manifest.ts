@@ -34,19 +34,11 @@ enum RequestDirection {
 }
 
 export class ProxyConfig extends UrlMatcher {
-    /// The endpoint to proxy the request to. Defaults to the global value
-    server_endpoint?: string;
-
-    /// Whether to rewrite location headers
+    /// Whether to rewrite location headers. Defaults to true.
     rewrite_location?: boolean;
 
     constructor(data: any) {
         super(data);
-
-        if (data.server_endpoint && typeof data.server_endpoint !== "string") {
-            throw new Error("ProxyConfig.server_endpoint must be a string");
-        }
-        this.server_endpoint = data.server_endpoint;
 
         if (data.rewrite_location && typeof data.rewrite_location !== "boolean") {
             throw new Error("ProxyConfig.rewrite_location must be a boolean");
@@ -314,8 +306,8 @@ export class Manifest {
 
     /// Instructs the portal to proxy URLs. If an url matches any of these patterns, it will be proxied.
     /// Top-level pages are always proxied.
-    /// By default, all urls are proxied.
-    proxy_urls?: ProxyConfig[];
+    /// Optional as by default, all urls are proxied.
+    proxy_urls: ProxyConfig[];
 
     /// Instructs the portal to load content scripts into web pages whose URL matches a given pattern.
     content_scripts?: ContentScriptsConfig[];
@@ -370,6 +362,9 @@ export class Manifest {
                 throw new Error("Manifest.proxy_urls must be an array");
             }
             this.proxy_urls = data.proxy_urls.map(proxy => new ProxyConfig(proxy));
+        }
+        if (!this.proxy_urls || this.proxy_urls.length === 0) {
+            this.proxy_urls = [new ProxyConfig({ matches: ["*://*"] })];
         }
 
         // Validate and set optional content_scripts

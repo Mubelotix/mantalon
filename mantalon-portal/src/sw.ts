@@ -3,33 +3,76 @@
 export type {};
 declare let self: ServiceWorkerGlobalScope;
 
+import { config } from "process";
 import { loadManifest, Manifest } from "./manifest";
 import { URLPattern } from "urlpattern-polyfill"; // TODO: When URLPatterns reaches baseline, remove this polyfill
 type ProxiedFetchType = (arg1: any, arg2?: any) => Promise<Response>;
+
+function orDefault(value: any, fallback: any) {
+    return value !== undefined ? value : fallback;
+}
 
 var initSuccess = false;
 var initError = null;
 var manifest: Manifest;
 var globalProxiedFetch: ProxiedFetchType;
 
-function proxy(event: FetchEvent) {
+function setCurrentHost(host: string) {
+
+}
+
+async function proxy(event: FetchEvent): Promise<Response> {
     let url = new URL(event.request.url);
     url.host = manifest.targets[0];
     if (!manifest.targets[0].includes(':')) {
         url.port = "443";
         url.protocol = "https:";
     }
-    
-    event.respondWith(globalProxiedFetch(url, {
+
+    let proxy_config = manifest.proxy_urls?.find((conf) => conf.matches.some((pattern) => pattern.test(url)));
+    if (!proxy_config) {
+        return await fetch(event.request);
+    }
+
+    let initialResponse = await globalProxiedFetch(url, {
         method: event.request.method,
         headers: event.request.headers,
         body: event.request.body,
-    }));
+    });
+
+    let headers = new Headers(initialResponse.headers);
+
+    if (orDefault(proxy_config.rewrite_location, true)) {
+        console.log("Rewriting location headers");
+        let location = headers.get("location");
+        console.log("Location: ", location);
+        if (location) {
+            let newLocation = new URL(location, url);
+            if (manifest.targets.includes(newLocation.host)) {
+                setCurrentHost(newLocation.host);
+                newLocation.host = self.location.host;
+                newLocation.protocol = self.location.protocol;
+            }
+            headers.set("location", newLocation.toString());
+
+            console.log("New Location: ", newLocation.toString());
+        } else {
+            console.log("No location header found");
+        }
+    }
+    
+    let finalResponse = new Response(initialResponse.body, {
+        status: initialResponse.status,
+        statusText: initialResponse.statusText,
+        headers: headers,
+    });
+
+    return finalResponse;
 }
 
 self.addEventListener("fetch", (event: FetchEvent) => {
     if (initSuccess) {
-        proxy(event);
+        event.respondWith(proxy(event));
     } else {
         event.respondWith(new Response("Service Worker not yet initialized"));
     }
