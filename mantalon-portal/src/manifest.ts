@@ -24,7 +24,7 @@ export interface ProxyConfig extends UrlMatcher {
     rewrite_location?: boolean;
 }
 
-export interface ContentScriptConfig extends UrlMatcher {
+export interface ContentScriptsConfig extends UrlMatcher {
     /// An array of paths referencing CSS files that will be injected into matching pages.
     css?: string[];
 
@@ -32,28 +32,46 @@ export interface ContentScriptConfig extends UrlMatcher {
     js?: string[];
 }
 
-enum HeaderAction {
-    SET,
-    APPEND,
-    REMOVE,
-    RENAME,
-}
-
-export interface AddHeaderConfig extends UrlMatcher {
+export interface AddHeaderConfig {
     /// Whether it's a request or a response header
     direction: RequestDirection;
-
-    /// The action to take
-    action: HeaderAction;
 
     /// The header to act on
     name: string;
 
-    /// The value to set, append, or rename the header to
-    value?: string;
+    /// The value to set the header to
+    value: string;
+
+    /// Whether to set or append the header. Defaults to set.
+    append?: boolean;
 }
 
-export interface ProcessScriptConfig extends UrlMatcher {
+export interface RemoveHeaderConfig {
+    /// Whether it's a request or a response header
+    direction: RequestDirection;
+
+    /// The header to act on
+    name: string;
+}
+
+export interface RenameHeaderConfig {
+    /// Whether it's a request or a response header
+    direction: RequestDirection;
+
+    /// The header to act on
+    name: string;
+
+    /// The new name of the header
+    new_name: string;
+}
+
+export interface HeadersConfig extends UrlMatcher {
+    add_headers: AddHeaderConfig[];
+    remove_headers: RemoveHeaderConfig[];
+    rename_headers: RenameHeaderConfig[];
+}
+
+export interface HandlerConfig extends UrlMatcher {
     /// Whether to run the script on the request or the response
     direction: RequestDirection;
 
@@ -63,12 +81,12 @@ export interface ProcessScriptConfig extends UrlMatcher {
     js: string;
 }
 
-export interface OverrideConfig extends UrlMatcher {
+export interface RewriteConfig extends UrlMatcher {
     /// The URL to load instead of the original one
-    override: string;
+    destination: string;
 }
 
-export interface SubstitutionConfig extends UrlMatcher {
+export interface Substitution {
     /// The regex pattern to match in the data
     pattern: string;
 
@@ -81,6 +99,10 @@ export interface SubstitutionConfig extends UrlMatcher {
     // TODO: Support request body substitution
 }
 
+export interface SubstitutionConfig extends UrlMatcher {
+    substitutions: Substitution[];
+}
+
 export interface Manifest {
     /// A list of websites that can be portaled to. The first one is the default and is required.
     targets: string[];
@@ -90,13 +112,13 @@ export interface Manifest {
 
     /// Instructs the portal to override URLs.
     /// If a URL matches any of these patterns, the portal will load the specified URL instead, without any detectable redirection.
-    overrides?: OverrideConfig[];
+    rewrites?: RewriteConfig[];
 
     /// Instructs the portal to edits headers on requests or responses.
-    add_headers?: AddHeaderConfig[];
+    headers?: HeadersConfig[];
 
     /// Instructs the portal to run scripts to process requests or responses.
-    process_scripts?: ProcessScriptConfig[];
+    handlers?: HandlerConfig[];
 
     /// Instructs the portal to proxy URLs. If an url matches any of these patterns, it will be proxied.
     /// Top-level pages are always proxied.
@@ -104,7 +126,7 @@ export interface Manifest {
     proxy_urls?: ProxyConfig[];
 
     /// Instructs the portal to load content scripts into web pages whose URL matches a given pattern.
-    content_scripts?: ContentScriptConfig[];
+    content_scripts?: ContentScriptsConfig[];
 
     /// Instructs the portal to substitute data in the response body.
     /// If a URL matches any of these patterns, the portal will replace the specified pattern with the specified replacement.
