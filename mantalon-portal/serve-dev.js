@@ -24,7 +24,7 @@ const server = http.createServer((request, response) => {
     if (request.url.startsWith("/mantalon/config/")) {
         request.url = request.url.substring("/mantalon/config".length);
         return handler(request, response, {
-            "public": "../examples/wikipedia",
+            "public": "./examples/wikipedia",
         });
     }
 
