@@ -51,6 +51,12 @@
             } else if (event.data.type === "mantalon-init-success") {
                 p.textContent = "Proxy initialisé! Chargement...";
                 window.location.reload();
+            } else if (event.data.type === "mantalon-init-waiting") {
+                setTimeout(() => {
+                    navigator.serviceWorker.ready.then((registration) => {
+                        registration.active.postMessage({type: "mantalon-init-status"});
+                    });
+                }, 5000);
             } else {
                 p.textContent = "Message inconnu reçu: " + event.data.type + " - " + event.data.error;
             }

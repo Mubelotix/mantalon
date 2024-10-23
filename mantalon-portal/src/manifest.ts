@@ -394,7 +394,7 @@ async function loadManifestFromNetwork(): Promise<Manifest> {
     const response = await fetch("/mantalon/config/manifest.json");
     let cache = await caches.open("mantalon-sw-files");
     cache.put("/mantalon/config/manifest.json", response.clone());
-    let data: any = response.json();
+    let data: any = await response.json();
     let manifest = new Manifest(data);
     return manifest;
 }

@@ -1,5 +1,9 @@
 {
-    "domains": ["en.wikipedia.org", "fr.wikipedia.org"],
+    "targets": ["chat.openai.com", "en.wikipedia.org", "fr.wikipedia.org"],
+    "server_endpoint": "http://127.0.0.1:8000/mantalon-connect",
+
+
+
     "landing_page": "landing.html",
     "lock_browsing": true,
     "https_only": true,

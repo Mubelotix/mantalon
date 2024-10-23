@@ -6,7 +6,7 @@
   "scripts": {
     "bundle": "node bundle.mjs",
     "watch": "chokidar './src' -d 10000 -c 'npm run bundle'",
-    "dev": "concurrently \"chokidar './src' -d 10000 -c 'npm run bundle'\" \"node serve-dev.js\""
+    "dev": "concurrently \"chokidar './src' -d 5000 -c 'npm run bundle'\" \"node serve-dev.js\""
   },
   "keywords": [],
   "author": "",

@@ -3,14 +3,36 @@
 export type {};
 declare let self: ServiceWorkerGlobalScope;
 
-import { loadManifest } from "./manifest";
+import { loadManifest, Manifest } from "./manifest";
 import { URLPattern } from "urlpattern-polyfill"; // TODO: When URLPatterns reaches baseline, remove this polyfill
+type ProxiedFetchType = (arg1: any, arg2?: any) => Promise<Response>;
 
 var initSuccess = false;
 var initError = null;
+var manifest: Manifest;
+var globalProxiedFetch: ProxiedFetchType;
+
+function proxy(event: FetchEvent) {
+    let url = new URL(event.request.url);
+    url.host = manifest.targets[0];
+    if (!manifest.targets[0].includes(':')) {
+        url.port = "443";
+        url.protocol = "https:";
+    }
+    
+    event.respondWith(globalProxiedFetch(url, {
+        method: event.request.method,
+        headers: event.request.headers,
+        body: event.request.body,
+    }));
+}
 
 self.addEventListener("fetch", (event: FetchEvent) => {
-  event.respondWith(new Response("Hello, world!"));
+    if (initSuccess) {
+        proxy(event);
+    } else {
+        event.respondWith(new Response("Service Worker not yet initialized"));
+    }
 });
 
 self.addEventListener("install", (event) => {
@@ -33,21 +55,18 @@ self.addEventListener('message', event => {
     }
 });
 
-async function initConfig() {
-    let manifest = await loadManifest();
-    console.log("Loaded manifest", manifest);
-}
-
-initConfig();
-
 try {
     importScripts("/mantalon/mantalon_client.js");
+
+    let loadingManifest = loadManifest();
 
     const { init, proxiedFetch } = wasm_bindgen;
     async function run() {
         await wasm_bindgen("/mantalon/mantalon_client_bg.wasm");
-        await init("http://localhost:1234/mantalon-connect");
+        manifest = await loadingManifest;
+        await init(manifest.server_endpoint);
         initSuccess = true;
+        globalProxiedFetch = proxiedFetch;1
         console.log("Successfully initialized Mantalon. Proxying ");
     }
 
