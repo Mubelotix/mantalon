@@ -1,7 +1,8 @@
 #![allow(clippy::map_clone)]
 #![allow(clippy::await_holding_refcell_ref)] // Because of false positives
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
+use js_sys::{global, Promise};
 use tokio_rustls::{rustls::{pki_types::{ServerName, IpAddr as RustlsIpAddr}, ClientConfig, RootCertStore}, TlsConnector};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::*;
@@ -81,4 +82,17 @@ pub async fn proxied_fetch(request: http::Request<MantalonBody>) -> Result<http:
     debug!("Response: {response:?}");
     
     Ok(response)
+}
+
+pub async fn sleep(duration: Duration) {
+    JsFuture::from(Promise::new(&mut |yes, _| {
+        global()
+            .dyn_into::<ServiceWorkerGlobalScope>()
+            .unwrap()
+            .set_timeout_with_callback_and_timeout_and_arguments_0(
+                &yes,
+                duration.as_millis() as i32,
+            )
+            .unwrap();
+    })).await.unwrap();
 }

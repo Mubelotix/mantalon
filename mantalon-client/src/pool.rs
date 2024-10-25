@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashMap, io::Error as IoError, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, io::Error as IoError, rc::Rc, time::Duration};
 use http::{Request, Response, Uri};
 use tokio::sync::RwLock;
 use tokio_rustls::rustls::pki_types::InvalidDnsNameError;
@@ -15,7 +15,7 @@ lazy_static!{
 
 #[allow(clippy::type_complexity)]
 pub struct Pool {
-    connections: Rc<RwLock<HashMap<String, SendRequest>>>,
+    connections: Rc<RwLock<HashMap<String, Option<SendRequest>>>>,
 }
 
 unsafe impl Send for Pool {}
@@ -124,8 +124,9 @@ impl Pool {
         // Wrap the websocket
         let websocket = WrappedWebSocket::new(websocket, on_close);
         websocket.ready().await;
+        let ready_state = websocket.ready_state();
         if websocket.ready_state() != WebSocket::OPEN {
-            return Err(SendRequestError::Websocket(JsValue::from_str("Websocket not open")));
+            return Err(SendRequestError::Websocket(JsValue::from_str(&format!("Websocket not open ({ready_state})"))));
         }
 
         let mut request_sender = if uri.scheme().map(|s| s.as_str()).unwrap_or_default() == "https" {
@@ -156,11 +157,11 @@ impl Pool {
         // Store the connection
         let request_sender2 = request_sender.clone();
         if let Ok(mut connections) = self.connections.try_write() {
-            connections.insert(multiaddr.clone(), request_sender2);
+            connections.insert(multiaddr.clone(), Some(request_sender2));
         } else {
             let connections = Rc::clone(&self.connections);
             spawn_local(async move {
-                connections.write().await.insert(multiaddr, request_sender2);
+                connections.write().await.insert(multiaddr, Some(request_sender2));
             });
         }
 
@@ -173,22 +174,39 @@ impl Pool {
         let uri = request.uri();
         let (multiaddr, _) = get_server(uri)?;
 
-        let connections = self.connections.read().await;
-        match connections.get(&multiaddr) {
-            Some(t) => {
-                debug!("Reusing connection to {}", multiaddr);
-                
-                let mut conn = SendRequest::clone(t);
-                std::mem::drop(connections);
-                let ready = conn.ready().await;
-                if ready.is_err() {
-                    return self.send_request_new_stream(request).await;
+        loop {
+            let connections = self.connections.read().await;
+            match connections.get(&multiaddr) {
+                Some(Some(t)) => {
+                    debug!("Reusing connection to {}", multiaddr);
+                    
+                    let mut conn = SendRequest::clone(t);
+                    drop(connections);
+                    let ready = conn.ready().await;
+                    if ready.is_err() {
+                        return self.send_request_new_stream(request).await;
+                    }
+                    return conn.send_request(request).await.map_err(SendRequestError::Hyper);
                 }
-                conn.send_request(request).await.map_err(SendRequestError::Hyper)
-            }
-            None => {
-                drop(connections);
-                self.send_request_new_stream(request).await
+                Some(None) => {
+                    drop(connections);
+                    sleep(Duration::from_millis(100)).await; // TODO: improve this
+                    continue;
+                }
+                None => {
+                    drop(connections);
+
+                    self.connections.write().await.insert(multiaddr.clone(), None);
+
+                    let result = self.send_request_new_stream(request).await;
+                    
+                    let mut connections = self.connections.write().await;
+                    if connections.get(&multiaddr).map(|c| c.is_none()).unwrap_or(false) {
+                        connections.remove(&multiaddr);
+                    }
+
+                    return result;
+                }
             }
         }
     }
