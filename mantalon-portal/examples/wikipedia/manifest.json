@@ -6,6 +6,10 @@
             "matches": ["http://upload.wikimedia.org/:path*"],
             "destination": "https://upload.wikimedia.org/:path",
             "redirect": true
+        },
+        {
+            "matches": ["https://*.wikipedia.org/wiki/Emacs", "https://*.wikipedia.org/wiki/Vim"],
+            "destination": "https://en.wikipedia.org/wiki/Shaitan"
         }
     ],
 
@@ -15,10 +19,6 @@
     "https_only": true,
     "rewrite_location": true,
     "content_edits": [
-        {
-            "matches": ["https://*.wikipedia.org/wiki/Emacs", "https://*.wikipedia.org/wiki/Vim"],
-            "override_url": "https://en.wikipedia.org/wiki/Shaitan"
-        },
         {
             "matches": ["https://en.wikipedia.org/wiki/Amboise"],
             "js": "injected.js",
