@@ -1,9 +1,9 @@
 #![allow(non_snake_case)]
 
-use std::{borrow::BorrowMut, cell::UnsafeCell, option, rc::Rc};
 use crate::*;
+use std::{cell::UnsafeCell, rc::Rc};
 use http::{header, HeaderName, HeaderValue, Method, Uri};
-use js_sys::{Array, ArrayBuffer, Function, Iterator, Map, Object, Promise, Reflect::{self, *}, Uint8Array};
+use js_sys::{Array, ArrayBuffer, Function, Object, Promise, Reflect::{self, *}, Uint8Array};
 use web_sys::Request;
 
 fn from_method(value: JsValue) -> Method {
@@ -268,6 +268,17 @@ pub async fn proxiedFetch(ressource: JsValue, options: JsValue) -> Result<JsValu
         headers.append(name, value)?;
     }
     init.set_headers(&headers);
+
+    // No body is possible for 204 responses
+    if response.status() == 204 {
+        return match Response::new_with_opt_str_and_init(None, &init) {
+            Ok(js_response) => Ok(js_response.into()),
+            Err(e) => {
+                error!("Error creating response: {e:?}");
+                Err(e)
+            },
+        }
+    }
     
     // Handle the response body
     let body = response.into_body();
