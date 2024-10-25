@@ -12,6 +12,14 @@
             "destination": "https://en.wikipedia.org/wiki/Shaitan"
         }
     ],
+    "headers": [
+        {
+            "matches": ["https://en.wikipedia.org/wiki/Amboise"],
+            "add_headers": [
+                {"name": "Content-Security-Policy", "value": "default-src 'self';"}
+            ]
+        }
+    ],
 
 
     "landing_page": "landing.html",
