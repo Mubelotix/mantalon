@@ -4,7 +4,7 @@ export type {};
 declare let self: ServiceWorkerGlobalScope;
 
 import { config } from "process";
-import { loadManifest, Manifest, RewriteConfig } from "./manifest";
+import { loadManifest, Manifest, RequestDirection, RewriteConfig } from "./manifest";
 import { Cookie, CookieJar } from "tough-cookie";
 import { URLPattern } from "urlpattern-polyfill"; // TODO: When URLPatterns reaches baseline, remove this polyfill
 type ProxiedFetchType = (arg1: any, arg2?: any) => Promise<Response>;
@@ -21,7 +21,7 @@ var initError = null;
 var manifest: Manifest;
 var globalProxiedFetch: ProxiedFetchType;
 
-function addDefaultHeaders(headers: Headers, destination: RequestDestination, mode: RequestMode): Headers {
+function addDefaultHeaders(headers: Headers, destination: RequestDestination, mode: RequestMode) {
     if (!headers.has("accept")) {
         let acceptValue: string;
         switch (destination) {
@@ -152,7 +152,54 @@ function addDefaultHeaders(headers: Headers, destination: RequestDestination, mo
     if (!headers.has("user-agent")) {
         headers.set("user-agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36");
     }
-    return headers;
+}
+
+function applyHeaderChanges(headers: Headers, url: URL, isRequest: boolean) {
+    let headersConfig = manifest.headers?.find((conf) => conf.matches.some((pattern) => pattern.test(url)));
+    if (!headersConfig) {
+        return;
+    }
+
+    for (let removeHeader of headersConfig.remove_headers || []) {
+        let direction = orDefault(removeHeader.direction, RequestDirection.BOTH);
+        if (
+            direction === RequestDirection.BOTH
+            || (isRequest && direction === RequestDirection.REQUEST)
+            || (!isRequest && direction === RequestDirection.RESPONSE)
+        ) {
+            headers.delete(removeHeader.name);
+        }
+    }
+
+    for (let renameHeader of headersConfig.rename_headers || []) {
+        let direction = orDefault(renameHeader.direction, RequestDirection.BOTH);
+        if (
+            direction === RequestDirection.BOTH
+            || (isRequest && direction === RequestDirection.REQUEST)
+            || (!isRequest && direction === RequestDirection.RESPONSE)
+        ) {
+            let value = headers.get(renameHeader.name);
+            if (value) {
+                headers.delete(renameHeader.name);
+                headers.set(renameHeader.name, value);
+            }
+        }
+    }
+
+    for (let addHeader of headersConfig.add_headers || []) {
+        let direction = orDefault(addHeader.direction, RequestDirection.BOTH);
+        if (
+            direction === RequestDirection.BOTH
+            || (isRequest && direction === RequestDirection.REQUEST)
+            || (!isRequest && direction === RequestDirection.RESPONSE)
+        ) {
+            if (orDefault(addHeader.append, false)) {
+                headers.append(addHeader.name, addHeader.value);
+            } else {
+                headers.set(addHeader.name, addHeader.value);
+            }
+        }
+    }
 }
 
 async function proxy(event: FetchEvent): Promise<Response> {
@@ -227,7 +274,7 @@ async function proxy(event: FetchEvent): Promise<Response> {
 
     // Edit request headers
     let requestHeaders = new Headers(event.request.headers);
-    requestHeaders = addDefaultHeaders(requestHeaders, event.request.destination, event.request.mode);
+    addDefaultHeaders(requestHeaders, event.request.destination, event.request.mode);
 
     // Add cookies
     const matchingCookies = await cookieJar.getCookies(url);
@@ -235,6 +282,9 @@ async function proxy(event: FetchEvent): Promise<Response> {
     if (cookieHeader.length > 0) {
         requestHeaders.set("cookie", cookieHeader);
     }
+
+    // Apply header changes
+     applyHeaderChanges(requestHeaders, url, true);
 
     let initialResponse = await globalProxiedFetch(url, {
         method: event.request.method,
@@ -260,23 +310,20 @@ async function proxy(event: FetchEvent): Promise<Response> {
 
     // Update cookies
     for (let [name, value] of responseHeaders.entries()) {
-        console.log(name, value);
         if (name.startsWith("x-mantalon-set-cookie-")) {
-            console.info("Parsing cookie", value);
             try {
                 const resCookie = Cookie.parse(value);
                 if (resCookie) {
-                    cookieJar.setCookie(resCookie, url).then(() => {
-                        console.info("Set cookie", resCookie);
-                    });
-                } else {
-                    console.error("Failed to parse cookie from set-cookie header", value);
+                    cookieJar.setCookie(resCookie, url);
                 }
             } catch (e) {
                 console.error("Failed to parse set-cookie header", e);
             }
         }
     }
+
+    // Apply header changes
+    applyHeaderChanges(responseHeaders, url, false);
     
     let finalResponse = new Response(initialResponse.body, {
         status: initialResponse.status,

@@ -25,7 +25,7 @@ export class UrlMatcher {
     }
 }
 
-enum RequestDirection {
+export enum RequestDirection {
     SERVER_BOUND = "server-bound",
     CLIENT_BOUND = "client-bound",
     BOTH = "both",
@@ -77,7 +77,7 @@ export class ContentScriptsConfig extends UrlMatcher {
 
 export class AddHeaderConfig {
     /// Whether it's a request or a response header
-    direction: RequestDirection;
+    direction?: RequestDirection;
 
     /// The header to act on
     name: string;
@@ -85,11 +85,11 @@ export class AddHeaderConfig {
     /// The value to set the header to
     value: string;
 
-    /// Whether to set or append the header. Defaults to set.
+    /// Whether to set or append the header. Defaults to false.
     append?: boolean;
 
     constructor(data: any) {
-        if (!Object.values(RequestDirection).includes(data.direction)) {
+        if (data.direction && !Object.values(RequestDirection).includes(data.direction)) {
             throw new Error("AddHeaderConfig.direction must be one of RequestDirection");
         }
         this.direction = data.direction;
@@ -113,13 +113,13 @@ export class AddHeaderConfig {
 
 export class RemoveHeaderConfig {
     /// Whether it's a request or a response header
-    direction: RequestDirection;
+    direction?: RequestDirection;
 
     /// The header to act on
     name: string;
 
     constructor(data: any) {
-        if (!Object.values(RequestDirection).includes(data.direction)) {
+        if (data.direction && !Object.values(RequestDirection).includes(data.direction)) {
             throw new Error("RemoveHeaderConfig.direction must be one of RequestDirection");
         }
         this.direction = data.direction;
@@ -133,7 +133,7 @@ export class RemoveHeaderConfig {
 
 export class RenameHeaderConfig {
     /// Whether it's a request or a response header
-    direction: RequestDirection;
+    direction?: RequestDirection;
 
     /// The header to act on
     name: string;
@@ -142,7 +142,7 @@ export class RenameHeaderConfig {
     new_name: string;
 
     constructor(data: any) {
-        if (!Object.values(RequestDirection).includes(data.direction)) {
+        if (data.direction && !Object.values(RequestDirection).includes(data.direction)) {
             throw new Error("RenameHeaderConfig.direction must be one of RequestDirection");
         }
         this.direction = data.direction;
