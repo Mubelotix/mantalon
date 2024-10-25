@@ -5,6 +5,7 @@ declare let self: ServiceWorkerGlobalScope;
 
 import { config } from "process";
 import { loadManifest, Manifest, RewriteConfig } from "./manifest";
+import { Cookie, CookieJar } from "tough-cookie";
 import { URLPattern } from "urlpattern-polyfill"; // TODO: When URLPatterns reaches baseline, remove this polyfill
 type ProxiedFetchType = (arg1: any, arg2?: any) => Promise<Response>;
 
@@ -13,6 +14,7 @@ function orDefault(value: any, fallback: any) {
 }
 
 var clientOrigins = new Map<string, string>();
+var cookieJar = new CookieJar();
 
 var initSuccess = false;
 var initError = null;
@@ -223,9 +225,16 @@ async function proxy(event: FetchEvent): Promise<Response> {
         return await fetch(event.request);
     }
 
-    // Edit headers
+    // Edit request headers
     let requestHeaders = new Headers(event.request.headers);
     requestHeaders = addDefaultHeaders(requestHeaders, event.request.destination, event.request.mode);
+
+    // Add cookies
+    const matchingCookies = await cookieJar.getCookies(url);
+    const cookieHeader = matchingCookies.map(cookie => cookie.cookieString()).join(';');
+    if (cookieHeader.length > 0) {
+        requestHeaders.set("cookie", cookieHeader);
+    }
 
     let initialResponse = await globalProxiedFetch(url, {
         method: event.request.method,
@@ -233,10 +242,10 @@ async function proxy(event: FetchEvent): Promise<Response> {
         body: event.request.body,
     });
 
-    let headers = new Headers(initialResponse.headers);
-
+    // Edit response headers
+    let responseHeaders = new Headers(initialResponse.headers);
     if (orDefault(proxy_config.rewrite_location, true)) {
-        let location = headers.get("location");
+        let location = responseHeaders.get("location");
         if (location) {
             let newLocation = new URL(location, url);
             if (manifest.targets.includes(newLocation.origin)) {
@@ -245,14 +254,34 @@ async function proxy(event: FetchEvent): Promise<Response> {
                 newLocation.protocol = self.location.protocol;
                 newLocation.port = self.location.port;
             }
-            headers.set("location", newLocation.toString());
+            responseHeaders.set("location", newLocation.toString());
+        }
+    }
+
+    // Update cookies
+    for (let [name, value] of responseHeaders.entries()) {
+        console.log(name, value);
+        if (name.startsWith("x-mantalon-set-cookie-")) {
+            console.info("Parsing cookie", value);
+            try {
+                const resCookie = Cookie.parse(value);
+                if (resCookie) {
+                    cookieJar.setCookie(resCookie, url).then(() => {
+                        console.info("Set cookie", resCookie);
+                    });
+                } else {
+                    console.error("Failed to parse cookie from set-cookie header", value);
+                }
+            } catch (e) {
+                console.error("Failed to parse set-cookie header", e);
+            }
         }
     }
     
     let finalResponse = new Response(initialResponse.body, {
         status: initialResponse.status,
         statusText: initialResponse.statusText,
-        headers: headers,
+        headers: responseHeaders,
     });
 
     return finalResponse;
