@@ -2,6 +2,8 @@
 export class UrlMatcher {
     matches: URLPattern[];
     exclude_matches?: URLPattern[];
+
+    // TODO: Add fetch type
     
     // TODO: Support globs
 
@@ -228,7 +230,7 @@ export class HandlerConfig extends UrlMatcher {
 
 export class RewriteConfig extends UrlMatcher {
     /// The URL to load instead of the original one
-    destination: string;
+    destination: string; // TODO: Support rewriting to mantalon config files
 
     /// Whether to quietly rewrite the URL or redirect the request. Defaults to false.
     redirect?: boolean;
@@ -250,7 +252,7 @@ export class RewriteConfig extends UrlMatcher {
 
 export class Substitution {
     /// The regex pattern to match in the data
-    pattern: string;
+    pattern: string; // TODO: Support regexes in substitution
 
     /// The replacement string
     replacement: string;
@@ -393,25 +395,49 @@ export class Manifest {
     }
 }
 
-async function loadManifestFromNetwork(): Promise<Manifest> {
-    const response = await fetch("/mantalon/config/manifest.json");
-    let cache = await caches.open("mantalon-sw-files");
-    cache.put("/mantalon/config/manifest.json", response.clone());
-    let data: any = await response.json();
-    let manifest = new Manifest(data);
-    return manifest;
+async function loadRessourceFromNetwork(filename: String): Promise<Response> {
+    let url = `/mantalon/config/${filename}`;
+    return await fetch(url);
+}
+
+export async function loadRessource(filename): Promise<Response | undefined> {
+    let url = `/mantalon/config/${filename}`;
+    let cache = await caches.open("mantalon-config-files");
+    let response = await cache.match(url);
+    return response;
+}
+
+function unique<T>(a: Array<T>): Array<T> {
+    return a.sort().filter(function(item, pos, ary) {
+        return !pos || item != ary[pos - 1];
+    });
 }
 
 export async function loadManifest(): Promise<Manifest> {
     try {
-        return loadManifestFromNetwork();
+        // Load manifest
+        let response = await loadRessourceFromNetwork("manifest.json");
+        let responseClone = response.clone();
+        let responseJson = await response.json();
+        let manifest = new Manifest(responseJson);
+
+        // Get ressources
+        let ressources = manifest.content_scripts?.map(script => [script.css || [], script.js || []].flat()).flat() || [];
+        ressources = unique(ressources);
+        
+        // Cache them all
+        let cache = await caches.open("mantalon-config-files");
+        cache.put("/mantalon/config/manifest.json", responseClone);
+        cache.addAll(ressources.map((ressource) => `/mantalon/config/${ressource}`));
+
+        return manifest;
     } catch {
-        let cache = await caches.open("mantalon-sw-files");
-        let request = await cache.match("/mantalon/config/manifest.json");
-        if (!request) {
+        let cache = await caches.open("mantalon-config-files");
+        let response = await loadRessource("manifest.json");
+        if (!response) {
             throw new Error("Failed to load manifest");
         }
-        let data: any = await request.json();
+        let data: any = await response.json();
         let manifest = new Manifest(data);
         return manifest;
     }

@@ -4,7 +4,7 @@ export type {};
 declare let self: ServiceWorkerGlobalScope;
 
 import { config } from "process";
-import { loadManifest, Manifest, RequestDirection, RewriteConfig } from "./manifest";
+import { loadManifest, loadRessource, Manifest, RequestDirection, RewriteConfig, Substitution, SubstitutionConfig } from "./manifest";
 import { Cookie, CookieJar } from "tough-cookie";
 import { URLPattern } from "urlpattern-polyfill"; // TODO: When URLPatterns reaches baseline, remove this polyfill
 type ProxiedFetchType = (arg1: any, arg2?: any) => Promise<Response>;
@@ -202,6 +202,73 @@ function applyHeaderChanges(headers: Headers, url: URL, isRequest: boolean) {
     }
 }
 
+async function applySubstitutions(response: Response, url: URL): Promise<ReadableStream<Uint8Array> | string | null> {
+    if (!response.body) {
+        return response.body;
+    }
+
+    let substitutionsConfig = manifest.substitutions?.find((conf) => conf.matches.some((pattern) => pattern.test(url)));
+    let contentScriptsConfig = manifest.content_scripts?.find((conf) => conf.matches.some((pattern) => pattern.test(url)));
+
+    if (!substitutionsConfig && !contentScriptsConfig) {
+        return response.body;
+    }
+
+    if (!substitutionsConfig) {
+        substitutionsConfig = new SubstitutionConfig({});
+    }
+
+    if (substitutionsConfig.substitutions.length == 0
+        && orDefault(contentScriptsConfig?.js?.length, 0) == 0
+        && orDefault(contentScriptsConfig?.css?.length, 0) == 0)
+    {
+        return response.body;
+    }
+
+    let bodyPromise = response.text(); // Start loading body while we load ressources
+
+    if (contentScriptsConfig) {
+        for (let css of contentScriptsConfig.css || []) {
+            let contentResponse = await loadRessource(css);
+            let content = await contentResponse?.text();
+            if (!content) {
+                console.error(`Couldn't inject css due to data being unavailable: ${css}`);
+                continue;
+            }
+            substitutionsConfig.substitutions.push(new Substitution ({
+                pattern: "<head>",
+                replacement: `<head><style>${content}</style>`,
+                once: true
+            }));
+        }
+        for (let js of contentScriptsConfig.js || []) {
+            let contentResponse = await loadRessource(js);
+            let content = await contentResponse?.text();
+            if (!content) {
+                console.error(`Couldn't inject js due to data being unavailable: ${js}`);
+                continue;
+            }
+            substitutionsConfig.substitutions.push(new Substitution ({
+                pattern: "<head>",
+                replacement: `<head><script>${content}</script>`,
+                once: true
+            }));
+        }
+    }
+
+    let body = await bodyPromise;
+    for (let substitution of substitutionsConfig.substitutions) {
+        let pattern = substitution.pattern;
+        let replacement = substitution.replacement;
+        if (orDefault(substitution.once, false)) {
+            body = body.replace(pattern, replacement);
+        } else {
+            body = body.replaceAll(pattern, replacement);
+        }
+    }
+    return body;
+}
+
 async function proxy(event: FetchEvent): Promise<Response> {
     // Get the actual URL of the request
     let url = new URL(event.request.url);
@@ -284,7 +351,7 @@ async function proxy(event: FetchEvent): Promise<Response> {
     }
 
     // Apply header changes
-     applyHeaderChanges(requestHeaders, url, true);
+    applyHeaderChanges(requestHeaders, url, true);
 
     let initialResponse = await globalProxiedFetch(url, {
         method: event.request.method,
@@ -324,8 +391,11 @@ async function proxy(event: FetchEvent): Promise<Response> {
 
     // Apply header changes
     applyHeaderChanges(responseHeaders, url, false);
+
+    // Apply substitutions
+    let body = await applySubstitutions(initialResponse, url);
     
-    let finalResponse = new Response(initialResponse.body, {
+    let finalResponse = new Response(body, {
         status: initialResponse.status,
         statusText: initialResponse.statusText,
         headers: responseHeaders,
