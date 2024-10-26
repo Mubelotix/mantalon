@@ -368,11 +368,34 @@ async function proxy(event: FetchEvent): Promise<Response> {
     // Apply header changes
     applyHeaderChanges(requestHeaders, url, true);
 
+    // Clone the request if we might want to resend it
+    let requestBody = event.request.body?.tee();
+
     let initialResponse = await globalProxiedFetch(url, {
         method: event.request.method,
         headers: requestHeaders,
-        body: event.request.body,
+        body: requestBody ? requestBody[0] : undefined
     });
+
+    // If the server asks for a single-chunk body, resend the request with the full body
+    if (initialResponse.status == 411 && requestBody) {
+        console.log("Resending request with full body");
+
+        const reader = requestBody[1].getReader();
+        let chunks: Uint8Array[] = [];
+        while (true) {
+            const {done, value} = await reader.read();
+            if (done) break;
+            chunks.push(value);
+        }
+        const requestFullBody = new Blob(chunks);
+        
+        initialResponse = await globalProxiedFetch(url, {
+            method: event.request.method,
+            headers: requestHeaders,
+            body: requestFullBody,
+        });
+    }
 
     // Edit response headers
     let responseHeaders = new Headers(initialResponse.headers);
