@@ -178,7 +178,12 @@ impl AsyncRead for WrappedWebSocket {
         cx: &mut Context<'_>,
         buf: &mut tokio::io::ReadBuf<'_>,
     ) -> Poll<std::io::Result<()>> {
-        *self.read_waker.borrow_mut() = Some(cx.waker().clone()); // TODO optim
+        let read_waker: &mut Option<Waker> = &mut self.read_waker.borrow_mut();
+        match read_waker {
+            Some(read_waker) => read_waker.clone_from(cx.waker()),
+            none_read_waker => *none_read_waker = Some(cx.waker().clone()),
+        }
+        
         let mut n = 0;
         let mut buffer = self.buffer.borrow_mut();
         while buf.remaining() > 0 {
