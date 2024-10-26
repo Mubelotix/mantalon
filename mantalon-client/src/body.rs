@@ -1,4 +1,4 @@
-use std::{collections::{HashMap, VecDeque}, fmt, future::Future, pin::Pin, task::{Context, Poll}};
+use std::{collections::VecDeque, fmt, future::Future, pin::Pin, task::{Context, Poll}};
 use crate::*;
 use hyper::body::Frame;
 use js_sys::{encode_uri_component, Object, Reflect, Uint8Array};

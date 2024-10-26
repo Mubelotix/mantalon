@@ -47,9 +47,17 @@ impl SendRequest {
     }
 
     /// Sends a request.
-    pub async fn send_request(&mut self, req: Request<MantalonBody>) -> Result<http::Response<Incoming>, hyper::Error> {
+    pub async fn send_request(&mut self, mut req: Request<MantalonBody>) -> Result<http::Response<Incoming>, hyper::Error> {
         match self {
-            SendRequest::H1(r) => r.lock().await.send_request(req).await,
+            SendRequest::H1(r) => {
+                if let Some(authority) = req.uri().authority() {
+                    if let Ok(host) = authority.host().parse() {
+                        req.headers_mut().insert("host", host);
+                    }
+                }
+
+                r.lock().await.send_request(req).await
+            },
             SendRequest::H2(r) => r.send_request(req).await,
         }
     }

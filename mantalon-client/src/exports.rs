@@ -220,13 +220,6 @@ pub async fn proxiedFetch(ressource: JsValue, options: JsValue) -> Result<JsValu
     }
     *request.headers_mut() = headers;
 
-    // Add host header
-    if let Some(authority) = uri.authority() {
-        if let Ok(host) = authority.host().parse() {
-            request.headers_mut().insert("host", host);
-        }
-    }
-
     // Send request
     let response = match proxied_fetch(request).await {
         Ok(response) => response,
