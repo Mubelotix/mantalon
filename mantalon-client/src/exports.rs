@@ -49,7 +49,7 @@ fn from_headers(value: JsValue) -> http::HeaderMap::<http::HeaderValue> {
 }
 
 async fn from_body(value: JsValue) -> Option<(MantalonBody, String)> {
-    if value.is_null() {
+    if value.is_falsy() {
         None
     } else if let Some(string_body) = value.as_string() {
         let body = MantalonBody::Known { data: Some(string_body.into_bytes().into()) };
