@@ -15,5 +15,9 @@ multiaddr = "0.18"
 soketto = { version = "0.8", features = ["http"] }
 tokio = { version = "1.37", features = ["full"] }
 tokio-util = { version = "0.7", default-features = false, features = ["compat"] }
-trust-dns-client = "0.23"
+trust-dns-client = { version="0.23", optional=true }
 clap = { version = "4.5", features = ["derive"] }
+
+[features]
+default = []
+custom_dns = ["trust-dns-client"]
