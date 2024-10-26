@@ -237,8 +237,10 @@ async function applySubstitutions(response: Response, url: URL): Promise<Readabl
             }
             substitutionsConfig.substitutions.push(new Substitution ({
                 pattern: "<head>",
-                replacement: `<head><style>${content}</style>`,
-                once: true
+                replacement: `<style>${content}</style>`,
+                insert: true,
+                once: true,
+                prevent_duplicates: true
             }));
         }
         for (let js of contentScriptsConfig.js || []) {
@@ -250,8 +252,10 @@ async function applySubstitutions(response: Response, url: URL): Promise<Readabl
             }
             substitutionsConfig.substitutions.push(new Substitution ({
                 pattern: "<head>",
-                replacement: `<head><script>${content}</script>`,
-                once: true
+                replacement: `<script>${content}</script>`,
+                insert: true,
+                once: true,
+                prevent_duplicates: true
             }));
         }
     }
@@ -260,6 +264,17 @@ async function applySubstitutions(response: Response, url: URL): Promise<Readabl
     for (let substitution of substitutionsConfig.substitutions) {
         let pattern = substitution.pattern;
         let replacement = substitution.replacement;
+
+        if (orDefault(substitution.prevent_duplicates, true)) {
+            if (body.includes(replacement)) {
+                continue;
+            }
+        }
+
+        if (orDefault(substitution.insert, false)) {
+            replacement = pattern + replacement;
+        }
+
         if (orDefault(substitution.once, false)) {
             body = body.replace(pattern, replacement);
         } else {

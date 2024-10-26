@@ -257,8 +257,14 @@ export class Substitution {
     /// The replacement string
     replacement: string;
 
-    /// Whether to replace a single or all occurrences
+    /// Whether to replace a single or all occurrences. Default's to false
     once?: boolean;
+
+    /// Whether to insert after instead of replacing. Default's to false
+    insert?: boolean;
+
+    /// Will skip the substitution if replacement is found at least once in the response body. Default's to true
+    prevent_duplicates?: boolean;
 
     // TODO: Support request body substitution
 
@@ -277,6 +283,16 @@ export class Substitution {
             throw new Error("Substitution.once must be a boolean");
         }
         this.once = data.once;
+
+        if (data.insert && typeof data.insert !== "boolean") {
+            throw new Error("Substitution.insert must be a boolean");
+        }
+        this.insert = data.insert;
+
+        if (data.prevent_duplicates && typeof data.prevent_duplicates !== "boolean") {
+            throw new Error("Substitution.prevent_duplicates must be a boolean");
+        }
+        this.prevent_duplicates = data.prevent_duplicates;
     }
 }
 
