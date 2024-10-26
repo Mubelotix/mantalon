@@ -21,7 +21,7 @@ var initError = null;
 var manifest: Manifest;
 var globalProxiedFetch: ProxiedFetchType;
 
-function addDefaultHeaders(headers: Headers, destination: RequestDestination, mode: RequestMode) {
+function addDefaultHeaders(headers: Headers, destination: RequestDestination, mode: RequestMode, currentOrigin: string) {
     if (!headers.has("accept")) {
         let acceptValue: string;
         switch (destination) {
@@ -151,6 +151,13 @@ function addDefaultHeaders(headers: Headers, destination: RequestDestination, mo
     }
     if (!headers.has("user-agent")) {
         headers.set("user-agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36");
+    }
+
+    if (!headers.get("origin") || headers.get("origin") === self.location.origin) {
+        headers.set("origin", currentOrigin);
+    }
+    if (!headers.get("referer") || headers.get("referer") === self.location.origin) {
+        headers.set("referer", currentOrigin);
     }
 }
 
@@ -287,12 +294,12 @@ async function applySubstitutions(response: Response, url: URL): Promise<Readabl
 async function proxy(event: FetchEvent): Promise<Response> {
     // Get the actual URL of the request
     let url = new URL(event.request.url);
+    let clientOrigin = clientOrigins.get(event.clientId);
+    if (!clientOrigin) {
+        clientOrigin = manifest.targets[0];
+        clientOrigins.set(event.clientId, clientOrigin);
+    }
     if (url.origin === self.location.origin) {
-        let clientOrigin = clientOrigins.get(event.clientId);
-        if (!clientOrigin) {
-            clientOrigin = manifest.targets[0];
-            clientOrigins.set(event.clientId, clientOrigin);
-        }
         let protocol = clientOrigin.substring(0, clientOrigin.indexOf(":"));
         let host = clientOrigin.substring(clientOrigin.indexOf(":") + 3);
         url.protocol = protocol;
@@ -356,7 +363,7 @@ async function proxy(event: FetchEvent): Promise<Response> {
 
     // Edit request headers
     let requestHeaders = new Headers(event.request.headers);
-    addDefaultHeaders(requestHeaders, event.request.destination, event.request.mode);
+    addDefaultHeaders(requestHeaders, event.request.destination, event.request.mode, clientOrigin);
 
     // Add cookies
     const matchingCookies = await cookieJar.getCookies(url);
