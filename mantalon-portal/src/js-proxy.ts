@@ -30,15 +30,29 @@ function setFakedUrl(target: URL) {
     // TODO
 }
 
+function getAllPropertyNames(obj): Set<string> {
+    const props: Set<string> = new Set();
+    let current = obj;
+    
+    while (current && current !== Object.prototype) {
+        Object.getOwnPropertyNames(current).forEach(prop => props.add(prop));
+        current = Object.getPrototypeOf(current);
+    }
+    
+    return props;
+}
+
 // The location proxy
 
 const LOCATION_WHITELISTED: Set<string> = new Set(["hash", "pathname", "search", "reload", "toString"]);
+
+const locationInitialMethods = getAllPropertyNames(location);
 
 const locationHandler = {
     get(targetLocation, prop, receiver) {
         if (LOCATION_WHITELISTED.has(prop)) {
             const value = Reflect.get(targetLocation, prop);
-            if (typeof value === 'function' && value.length >= 0) {
+            if (typeof value === 'function' && locationInitialMethods.has(prop)) {
                 return value.bind(targetLocation);
             }
             return value;
@@ -87,9 +101,9 @@ const locationHandler = {
 
     set(targetLocation, prop, value, receiver): boolean {
         if (LOCATION_WHITELISTED.has(prop)) {
-            if (typeof value === 'function' && value.length >= 0) {
+            if (typeof value === 'function' && locationInitialMethods.has(prop)) {
                 return Reflect.set(targetLocation, prop, value.bind(targetLocation));
-            }    
+            }
             return Reflect.set(targetLocation, prop, value);
         }
 
@@ -157,6 +171,8 @@ const proxiedLocation = new Proxy(location, locationHandler);
 
 // The document proxy
 
+const documentInitialMethods = getAllPropertyNames(document);
+
 const documentHandler = {
     get(targetDocument, prop, receiver) {
         if (prop === "location") {
@@ -164,7 +180,7 @@ const documentHandler = {
         }
 
         const value = Reflect.get(targetDocument, prop);
-        if (typeof value === 'function' && value.length >= 0) {
+        if (typeof value === 'function' && documentInitialMethods.has(prop)) {
             return value.bind(targetDocument);
         }
         return value;
@@ -175,7 +191,7 @@ const documentHandler = {
             setFakedUrl(value);
             return true;
         }
-        if (typeof value === 'function' && value.length >= 0) {
+        if (typeof value === 'function' && documentInitialMethods.has(prop)) {
             return Reflect.set(targetDocument, prop, value.bind(targetDocument));
         }
         return Reflect.set(targetDocument, prop, value);
@@ -184,6 +200,8 @@ const documentHandler = {
 const proxiedDocument = new Proxy(document, documentHandler);
 
 // The window proxy
+
+const windowInitialMethods = getAllPropertyNames(window);
 
 const windowHandler = {
     get(targetWindow, prop, receiver) {
@@ -195,7 +213,7 @@ const windowHandler = {
         }
 
         const value = Reflect.get(targetWindow, prop);
-        if (typeof value === 'function' && value.toString().includes("[native code]")) {
+        if (typeof value === 'function' && windowInitialMethods.has(prop)) {
             return value.bind(targetWindow);
         }
         return value;
@@ -207,7 +225,7 @@ const windowHandler = {
             return true;
         }
 
-        if (typeof value === 'function' && value.toString().includes("[native code]")) {
+        if (typeof value === 'function' && windowInitialMethods.has(prop)) {
             return Reflect.set(targetWindow, prop, value.bind(targetWindow));
         }
         return Reflect.set(targetWindow, prop, value);
