@@ -1,9 +1,9 @@
 {
-    "targets": ["https://google.com"],
+    "targets": ["https://www.google.com", "https://google.com", "https://consent.google.com"],
     "server_endpoint": "http://127.0.0.1:8000/mantalon-connect",
     "substitutions": [
         {
-            "matches": ["https://google.com/recaptcha/api.js"],
+            "matches": ["https://{*.}?google.com/recaptcha/api.js"],
             "substitutions": [
                 {
                     "pattern": "sha384-me+fKkpx+LDPr+jjTccMyZRS5BoP+JLiYHKscp4bUxp+j6TnL/qxiwcgzpRCCrlc",
@@ -15,7 +15,7 @@
     ],
     "headers": [
         {
-            "matches": ["*://google.com/:path*"],
+            "matches": ["*://*"],
             "add_headers": [
                 {"name": "Content-Security-Policy", "value": "default-src * 'unsafe-eval' 'unsafe-inline' data: filesystem: about: blob: ws: wss:"}
             ]
