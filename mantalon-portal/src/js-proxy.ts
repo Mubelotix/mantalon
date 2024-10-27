@@ -1,9 +1,8 @@
-// Document URL and domain and referrer
-// Window/document location
-// Message passing
-// Cookies!
-// history
-// parent window
+// TODO: Document URL and domain and referrer
+// TODO: Message passing
+// TODO: Cookies
+// TODO: History
+// TODO: Parent window
 
 interface Window {
     proxiedWindow: typeof proxiedWindow;
@@ -60,7 +59,7 @@ const locationHandler = {
 
         switch (prop) {
             case "ancestorOrigins":
-                console.error("ancestorOrigins is not implemented. Returning empty array.");
+                console.error("ancestorOrigins is not implemented. Returning empty array."); // FIXME: Implement ancestorOrigins
                 return [];
             case "host":
                 return currentHost;
