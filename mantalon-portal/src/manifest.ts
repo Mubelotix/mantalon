@@ -313,6 +313,22 @@ export class SubstitutionConfig extends UrlMatcher {
     }
 }
 
+export class JsProxyConfig extends UrlMatcher {
+    // Whether to proxy js objects. Defaults to false.
+    enabled?: boolean;
+    
+    // TODO: allow to specify custom proxy
+
+    constructor(data: any) {
+        super(data);
+
+        if (data.enabled && typeof data.enabled !== "boolean") {
+            throw new Error("JsProxyConfig.enabled must be a boolean");
+        }
+        this.enabled = data.enabled;
+    }
+}
+
 export class Manifest {
     /// A list of websites that can be portaled to. The first one is the default and is required.
     targets: string[];
@@ -342,6 +358,12 @@ export class Manifest {
     /// If a URL matches any of these patterns, the portal will replace the specified pattern with the specified replacement.
     /// Warning: this disables body streaming, so it musn't be used on massive/media files.
     substitutions?: SubstitutionConfig[];
+
+    /// Complex websites may use window.location to navigate away from your portal or detect your portal.
+    /// This feature will rewrite all javascript code on target pages to use a proxy object instead of the real window object.
+    /// It will lie about the current URL and catch navigation attempts.
+    /// While this feature is powerful, it is disabled by default as it is more resource-intensive and might not be necessary for most websites.
+    js_proxies?: JsProxyConfig[];
 
     // TODO: Add cache features
 
@@ -408,6 +430,14 @@ export class Manifest {
             }
             this.substitutions = data.substitutions.map(sub => new SubstitutionConfig(sub));
         }
+
+        // Validate and set optional js_proxies
+        if (data.js_proxies) {
+            if (!Array.isArray(data.js_proxies)) {
+                throw new Error("Manifest.js_proxies must be an array");
+            }
+            this.js_proxies = data.js_proxies.map(js_proxy => new JsProxyConfig(js_proxy));
+        }
     }
 }
 
@@ -447,11 +477,10 @@ export async function loadManifest(): Promise<Manifest> {
         cache.addAll(ressources.map((ressource) => `/mantalon/config/${ressource}`));
 
         return manifest;
-    } catch {
-        let cache = await caches.open("mantalon-config-files");
+    } catch(e) {
         let response = await loadRessource("manifest.json");
         if (!response) {
-            throw new Error("Failed to load manifest");
+            throw e;
         }
         let data: any = await response.json();
         let manifest = new Manifest(data);

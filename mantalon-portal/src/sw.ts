@@ -7,11 +7,34 @@ import { config } from "process";
 import { loadManifest, loadRessource, Manifest, RequestDirection, RewriteConfig, Substitution, SubstitutionConfig } from "./manifest";
 import { Cookie, CookieJar } from "tough-cookie";
 import { URLPattern } from "urlpattern-polyfill"; // TODO: When URLPatterns reaches baseline, remove this polyfill
+const recast = require('recast');
+const parse5 = require('parse5');
+
 type ProxiedFetchType = (arg1: any, arg2?: any) => Promise<Response>;
 
 function orDefault(value: any, fallback: any) {
     return value !== undefined ? value : fallback;
 }
+
+const JAVASCRIPT_MIME_TYPES = new Set([
+    "module", // for <script type=module>
+    "text/javascript",
+    "application/javascript",
+    "application/ecmascript",
+    "application/x-ecmascript",
+    "application/x-javascript",
+    "text/ecmascript",
+    "text/javascript1.0",
+    "text/javascript1.1",
+    "text/javascript1.2",
+    "text/javascript1.3",
+    "text/javascript1.4",
+    "text/javascript1.5",
+    "text/jscript",
+    "text/livescript",
+    "text/x-ecmascript",
+    "text/x-javascript",
+]);
 
 var clientOrigins = new Map<string, string>();
 var cookieJar = new CookieJar();
@@ -209,16 +232,113 @@ function applyHeaderChanges(headers: Headers, url: URL, isRequest: boolean) {
     }
 }
 
-async function applySubstitutions(response: Response, url: URL): Promise<ReadableStream<Uint8Array> | string | null> {
+function applyJsProxyOnJs(input): string {
+    const ast = recast.parse(input);
+    recast.types.visit(ast, {
+        visitMemberExpression(path) {
+            const { node } = path;
+
+            if (recast.types.namedTypes.Identifier.check(node.object) && node.object.name === "window") {
+                const newObject = recast.types.builders.memberExpression(
+                    recast.types.builders.identifier("window"),
+                    recast.types.builders.identifier("fakewindow")
+                );
+
+                path.replace(
+                    recast.types.builders.memberExpression(newObject, node.property)
+                );
+
+                return false; // Stop further traversal down this path
+            }
+
+            this.traverse(path);
+        }
+    });
+    
+    return recast.print(ast).code;
+}
+
+function applyJsProxyOnDoc(input) {
+    console.info("Applying JS proxy on document");
+
+    // Parse the document with parse5
+    let document = parse5.parse(input);
+
+    // Helper function to recursively find and modify script tags
+    function traverseAndModify(node) {
+        if (node.tagName === "script" && node.attrs) {
+            // Get the `type` attribute from the script tag if it exists
+            const typeAttr = node.attrs.find(attr => attr.name === "type");
+            const typeValue = typeAttr ? typeAttr.value : "text/javascript";
+
+            // Only modify scripts with allowed types
+            if (JAVASCRIPT_MIME_TYPES.has(typeValue) && node.childNodes && node.childNodes.length > 0) {
+                // Assume textContent is in the first child node of the script tag
+                let scriptTextNode = node.childNodes[0];
+                let input = scriptTextNode.value;
+                try {
+                    let output = applyJsProxyOnJs(input);
+                    scriptTextNode.value = output;
+                } catch(e) {
+                    console.error("Failed to apply JS proxy on script tag", e);
+                }
+            }
+        }
+
+        // Recursively traverse child nodes if they exist
+        if (node.childNodes) {
+            for (let childNode of node.childNodes) {
+                traverseAndModify(childNode);
+            }
+        }
+    }
+
+    // Start traversal on the document's root node
+    traverseAndModify(document);
+
+    // Serialize the modified document back to HTML
+    let outputHtml = parse5.serialize(document);
+    return outputHtml;
+}
+
+async function applyJsProxy(response: Response, url: URL, contentType: string): Promise<string | undefined> {
     if (!response.body) {
-        return response.body;
+        return undefined;
+    }
+
+    const jsProxyConfig = manifest.js_proxies?.find((conf) => conf.matches.some((pattern) => pattern.test(url)));
+    if (!jsProxyConfig) {
+        return undefined;
+    }
+
+    if (!orDefault(jsProxyConfig.enabled, false)) {
+        return undefined;
+    }
+
+    try {
+        // TODO: Add more content types
+        if (contentType.includes("text/html")) {
+            return applyJsProxyOnDoc(await response.text());
+        } else if (contentType.includes("text/javascript")) {
+            return applyJsProxyOnJs(await response.text());
+        }
+    } catch (e) {
+        console.error("Failed to apply JS proxy", e);
+    }
+    
+    return undefined;
+}
+
+async function applySubstitutions(response: Response | string, url: URL): Promise<string | undefined> {
+    if (response instanceof Response && response.body === null) {
+        return undefined;
     }
 
     let substitutionsConfig = manifest.substitutions?.find((conf) => conf.matches.some((pattern) => pattern.test(url)));
     let contentScriptsConfig = manifest.content_scripts?.find((conf) => conf.matches.some((pattern) => pattern.test(url)));
 
     if (!substitutionsConfig && !contentScriptsConfig) {
-        return response.body;
+        return undefined;
     }
 
     if (!substitutionsConfig) {
@@ -229,10 +349,16 @@ async function applySubstitutions(response: Response, url: URL): Promise<Readabl
         && orDefault(contentScriptsConfig?.js?.length, 0) == 0
         && orDefault(contentScriptsConfig?.css?.length, 0) == 0)
     {
-        return response.body;
+        return undefined;
     }
 
-    let bodyPromise = response.text(); // Start loading body while we load ressources
+    // Start loading body while we load ressources
+    let bodyPromise: Promise<string>;
+    if (response instanceof Response) {
+        bodyPromise = response.text();
+    } else {
+        bodyPromise = Promise.resolve(response);
+    }
 
     if (contentScriptsConfig) {
         for (let css of contentScriptsConfig.css || []) {
@@ -383,6 +509,7 @@ async function proxy(event: FetchEvent): Promise<Response> {
         headers: requestHeaders,
         body: requestBody ? requestBody[0] : undefined
     });
+    let bodyOverride: string | undefined;
 
     // If the server asks for a single-chunk body, resend the request with the full body
     if (initialResponse.status == 411 && requestBody) {
@@ -437,10 +564,19 @@ async function proxy(event: FetchEvent): Promise<Response> {
     // Apply header changes
     applyHeaderChanges(responseHeaders, url, false);
 
+    // Apply js proxy
+    let jsProxyResult = await applyJsProxy(initialResponse, url, responseHeaders.get("content-type") || "");
+    if (jsProxyResult) {
+        bodyOverride = jsProxyResult;
+    }
+
     // Apply substitutions
-    let body = await applySubstitutions(initialResponse, url);
+    let substitutionResults = await applySubstitutions(bodyOverride || initialResponse, url);
+    if (substitutionResults) {
+        bodyOverride = substitutionResults;
+    }
     
-    let finalResponse = new Response(body, {
+    let finalResponse = new Response(bodyOverride || initialResponse.body, {
         status: initialResponse.status,
         statusText: initialResponse.statusText,
         headers: responseHeaders,
