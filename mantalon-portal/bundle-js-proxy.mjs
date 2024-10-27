@@ -8,5 +8,5 @@ esbuild.build({
   platform: "browser",
   minify: true,
 }).then(() => {
-  console.log("Service worker bundled successfully.");
+  console.log("JS proxy script bundled successfully.");
 }).catch(() => process.exit(1));

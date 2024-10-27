@@ -3,6 +3,7 @@
 // Message passing
 // Cookies!
 // history
+// parent window
 
 interface Window {
     proxiedWindow: typeof proxiedWindow;
@@ -36,7 +37,11 @@ const LOCATION_WHITELISTED: Set<string> = new Set(["hash", "pathname", "search",
 const locationHandler = {
     get(targetLocation, prop, receiver) {
         if (LOCATION_WHITELISTED.has(prop)) {
-            return Reflect.get(targetLocation, prop);
+            const value = Reflect.get(targetLocation, prop);
+            if (typeof value === 'function' && value.length >= 0) {
+                return value.bind(targetLocation);
+            }
+            return value;
         }
 
         switch (prop) {
@@ -82,7 +87,10 @@ const locationHandler = {
 
     set(targetLocation, prop, value, receiver): boolean {
         if (LOCATION_WHITELISTED.has(prop)) {
-            return Reflect.set(targetLocation, prop, value, receiver);
+            if (typeof value === 'function' && value.length >= 0) {
+                return Reflect.set(targetLocation, prop, value.bind(targetLocation));
+            }    
+            return Reflect.set(targetLocation, prop, value);
         }
 
         switch (prop) {
@@ -151,20 +159,26 @@ const proxiedLocation = new Proxy(location, locationHandler);
 
 const documentHandler = {
     get(targetDocument, prop, receiver) {
-        if (prop === "cookie") {
-            throw new Error("Unimplemented");
-        }
         if (prop === "location") {
             return proxiedLocation;
         }
-        return Reflect.get(targetDocument, prop);
+
+        const value = Reflect.get(targetDocument, prop);
+        if (typeof value === 'function' && value.length >= 0) {
+            return value.bind(targetDocument);
+        }
+        return value;
     },
 
     set(targetDocument, prop, value, receiver): boolean {
-        if (prop === "location" || prop === "cookie") {
-            throw new Error("Unimplemented");
+        if (prop === "location") {
+            setFakedUrl(value);
+            return true;
         }
-        return Reflect.set(targetDocument, prop, value, receiver);
+        if (typeof value === 'function' && value.length >= 0) {
+            return Reflect.set(targetDocument, prop, value.bind(targetDocument));
+        }
+        return Reflect.set(targetDocument, prop, value);
     }
 };
 const proxiedDocument = new Proxy(document, documentHandler);
@@ -173,23 +187,29 @@ const proxiedDocument = new Proxy(document, documentHandler);
 
 const windowHandler = {
     get(targetWindow, prop, receiver) {
-        if (prop == "history") {
-            throw new Error("Unimplemented");
-        }
         if (prop === "document") {
             return proxiedDocument;
         }
         if (prop === "location") {
             return proxiedLocation;
         }
-        return Reflect.get(targetWindow, prop);
+        
+        const value = Reflect.get(targetWindow, prop);
+        if (typeof value === 'function' && value.length >= 0) {
+            return value.bind(targetWindow);
+        }
+        return value;
     },
 
     set(targetWindow, prop, value, receiver): boolean {
-        if (prop === "location" || prop === "history") {
-            throw new Error("Unimplemented");
+        if (prop === "location") {
+            setFakedUrl(value);
+            return true;
         }
-        return Reflect.set(targetWindow, prop, value, receiver);
+        if (typeof value === 'function' && value.length >= 0) {
+            return Reflect.set(targetWindow, prop, value.bind(targetWindow));
+        }
+        return Reflect.set(targetWindow, prop, value);
     }
 };
 const proxiedWindow = new Proxy(window, windowHandler);

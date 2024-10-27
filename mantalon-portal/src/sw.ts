@@ -235,24 +235,14 @@ function applyHeaderChanges(headers: Headers, url: URL, isRequest: boolean) {
 function applyJsProxyOnJs(input: string): string {
     const ast = recast.parse(input);
     recast.types.visit(ast, {
-        visitMemberExpression(path) {
-            const { node } = path;
-
-            if (recast.types.namedTypes.Identifier.check(node.object) && node.object.name === "window") {
-                const newObject = recast.types.builders.memberExpression(
-                    recast.types.builders.identifier("window"),
-                    recast.types.builders.identifier("proxiedWindow")
-                );
-
-                path.replace(
-                    recast.types.builders.memberExpression(newObject, node.property)
-                );
-
-                return false; // Stop further traversal down this path
+        visitIdentifier(path) {
+            if (path.node.name === "window") {
+                path.replace(recast.types.builders.identifier("proxiedWindow"));
+                return false;
             }
 
             this.traverse(path);
-        }
+        },
     });
     
     return recast.print(ast).code;
