@@ -193,25 +193,42 @@ const windowHandler = {
         if (prop === "location") {
             return proxiedLocation;
         }
-        
+
         const value = Reflect.get(targetWindow, prop);
+        
+        // Special case for jQuery ($)
+        if (prop === 'jQuery' || prop === '$') {
+            return value; // Return jQuery directly without binding
+        }
+        
+        // Handle other function bindings
         if (typeof value === 'function' && value.length >= 0) {
             return value.bind(targetWindow);
         }
+
         return value;
     },
 
-    set(targetWindow, prop, value, receiver): boolean {
+    set(targetWindow, prop, value, receiver) {
         if (prop === "location") {
             setFakedUrl(value);
             return true;
         }
+
+        // Special case for jQuery ($)
+        if (prop === 'jQuery' || prop === '$') {
+            return Reflect.set(targetWindow, prop, value);
+        }
+
+        // Handle other function bindings
         if (typeof value === 'function' && value.length >= 0) {
             return Reflect.set(targetWindow, prop, value.bind(targetWindow));
         }
+
         return Reflect.set(targetWindow, prop, value);
     }
 };
+
 const proxiedWindow = new Proxy(window, windowHandler);
 
 window.proxiedWindow = proxiedWindow;
