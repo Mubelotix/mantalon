@@ -348,7 +348,10 @@ async function applySubstitutions(response: Response | string, url: URL): Promis
     }
 
     if (!substitutionsConfig) {
-        substitutionsConfig = new SubstitutionConfig({});
+        substitutionsConfig = new SubstitutionConfig({
+            matches: ["https://example.com"],
+            substitutions: []
+        });
     }
 
     if (substitutionsConfig.substitutions.length == 0
