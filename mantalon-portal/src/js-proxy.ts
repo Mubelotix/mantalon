@@ -195,17 +195,9 @@ const windowHandler = {
         }
 
         const value = Reflect.get(targetWindow, prop);
-        
-        // Special case for jQuery ($)
-        if (prop === 'jQuery' || prop === '$') {
-            return value; // Return jQuery directly without binding
-        }
-        
-        // Handle other function bindings
-        if (typeof value === 'function' && value.length >= 0) {
+        if (typeof value === 'function' && value.toString().includes("[native code]")) {
             return value.bind(targetWindow);
         }
-
         return value;
     },
 
@@ -215,16 +207,9 @@ const windowHandler = {
             return true;
         }
 
-        // Special case for jQuery ($)
-        if (prop === 'jQuery' || prop === '$') {
-            return Reflect.set(targetWindow, prop, value);
-        }
-
-        // Handle other function bindings
-        if (typeof value === 'function' && value.length >= 0) {
+        if (typeof value === 'function' && value.toString().includes("[native code]")) {
             return Reflect.set(targetWindow, prop, value.bind(targetWindow));
         }
-
         return Reflect.set(targetWindow, prop, value);
     }
 };
