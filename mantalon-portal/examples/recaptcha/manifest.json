@@ -1,0 +1,30 @@
+{
+    "targets": ["https://google.com"],
+    "server_endpoint": "http://127.0.0.1:8000/mantalon-connect",
+    "substitutions": [
+        {
+            "matches": ["https://google.com/recaptcha/api.js"],
+            "substitutions": [
+                {
+                    "pattern": "sha384-me+fKkpx+LDPr+jjTccMyZRS5BoP+JLiYHKscp4bUxp+j6TnL/qxiwcgzpRCCrlc",
+                    "replacement": "sha384-dfjssxqoKEJZrNUenwPrjfxtZFZFuI3LHC7hxzp5TKl91+/iBa3TDnHJZVEb6pOZ",
+                    "once": false
+                }
+            ]
+        }
+    ],
+    "headers": [
+        {
+            "matches": ["*://google.com/:path*"],
+            "add_headers": [
+                {"name": "Content-Security-Policy", "value": "default-src * 'unsafe-eval' 'unsafe-inline' data: filesystem: about: blob: ws: wss:"}
+            ]
+        }
+    ],
+    "js_proxies": [
+        {
+            "matches": ["*://*"],
+            "enabled": true
+        }
+    ]
+}

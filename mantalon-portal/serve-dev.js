@@ -2,6 +2,8 @@ const handler = require("serve-handler");
 const http = require("http");
 const fs = require("fs");
 
+const directory = process.env.npm_config_directory || "wikipedia";
+
 const server = http.createServer((request, response) => {
     // Internal files
     let internal = false;
@@ -28,7 +30,7 @@ const server = http.createServer((request, response) => {
     if (request.url.startsWith("/mantalon/config/")) {
         request.url = request.url.substring("/mantalon/config".length);
         return handler(request, response, {
-            "public": "./examples/wikipedia",
+            "public": `./examples/${directory}`,  // Use the specified directory
         });
     }
 
