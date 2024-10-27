@@ -615,9 +615,9 @@ self.addEventListener('message', event => {
         if (initError) {
             event.source?.postMessage({ type: "mantalon-init-error", error: initError });
         } else if (initSuccess) {
-            event.source?.postMessage({ type: "mantalon-init-waiting" });
-        } else {
             event.source?.postMessage({ type: "mantalon-init-success" });
+        } else {
+            event.source?.postMessage({ type: "mantalon-init-waiting" });
         }
     }
 });
