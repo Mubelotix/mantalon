@@ -363,6 +363,7 @@ export class Manifest {
     /// This feature will rewrite all javascript code on target pages to use a proxy object instead of the real window object.
     /// It will lie about the current URL and catch navigation attempts.
     /// While this feature is powerful, it is disabled by default as it is more resource-intensive and might not be necessary for most websites.
+    /// It might also break sites due to CSP policies but you can easily change them.
     js_proxies?: JsProxyConfig[];
 
     // TODO: Add cache features
@@ -469,6 +470,7 @@ export async function loadManifest(): Promise<Manifest> {
 
         // Get ressources
         let ressources = manifest.content_scripts?.map(script => [script.css || [], script.js || []].flat()).flat() || [];
+        ressources.push("js-proxy-bundle.js");
         ressources = unique(ressources);
         
         // Cache them all

@@ -232,7 +232,7 @@ function applyHeaderChanges(headers: Headers, url: URL, isRequest: boolean) {
     }
 }
 
-function applyJsProxyOnJs(input): string {
+function applyJsProxyOnJs(input: string): string {
     const ast = recast.parse(input);
     recast.types.visit(ast, {
         visitMemberExpression(path) {
@@ -241,7 +241,7 @@ function applyJsProxyOnJs(input): string {
             if (recast.types.namedTypes.Identifier.check(node.object) && node.object.name === "window") {
                 const newObject = recast.types.builders.memberExpression(
                     recast.types.builders.identifier("window"),
-                    recast.types.builders.identifier("fakewindow")
+                    recast.types.builders.identifier("proxiedWindow")
                 );
 
                 path.replace(
@@ -259,8 +259,6 @@ function applyJsProxyOnJs(input): string {
 }
 
 function applyJsProxyOnDoc(input) {
-    console.info("Applying JS proxy on document");
-
     // Parse the document with parse5
     let document = parse5.parse(input);
 
@@ -318,7 +316,25 @@ async function applyJsProxy(response: Response, url: URL, contentType: string): 
     try {
         // TODO: Add more content types
         if (contentType.includes("text/html")) {
-            return applyJsProxyOnDoc(await response.text());
+            let html = applyJsProxyOnDoc(await response.text());
+            let bundleResponse = await loadRessource("js-proxy-bundle.js");
+            if (!bundleResponse) {
+                console.error("Failed to load JS proxy bundle");
+                return undefined;
+            }
+
+            let content = await bundleResponse.text();
+            content = content.replace(`="origin"`, `="${url.origin}"`);
+            content = content.replace(`=new Set(["targetOrigins"])`, `=new Set(${JSON.stringify(manifest.targets)})`);
+            if (!html.includes(content)) {
+                if (!html.includes("<head>")) {
+                    console.error("Failed to inject JS proxy bundle: <head> not found in document");
+                    return undefined;
+                }
+                html = html.replace("<head>", `<head><script>${content}</script>`);
+            }
+            
+            return html;
         } else if (contentType.includes("text/javascript")) {
             return applyJsProxyOnJs(await response.text());
         }

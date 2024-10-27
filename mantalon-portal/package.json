@@ -5,8 +5,9 @@
   "main": "index.js",
   "scripts": {
     "bundle": "node bundle.mjs",
+    "bundle-js-proxy": "node bundle-js-proxy.mjs",
     "watch": "chokidar './src' -d 5000 -c 'npm run bundle'",
-    "dev": "concurrently \"chokidar './src' -d 5000 -c 'npm run bundle'\" \"node serve-dev.js\""
+    "dev": "concurrently \"chokidar './src' -d 5000 -c 'npm run bundle'\" \"chokidar './src/js-proxy.ts' -d 5000 -c 'npm run bundle-js-proxy'\" \"node serve-dev.js\""
   },
   "keywords": [],
   "author": "",

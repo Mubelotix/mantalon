@@ -1,15 +1,11 @@
 import esbuild from "esbuild";
-import { polyfillNode } from "esbuild-plugin-polyfill-node";
 
 esbuild.build({
-  entryPoints: ["./src/sw.ts"],
+  entryPoints: ["./src/js-proxy.ts"],
   bundle: true,
-  outfile: "./sw-bundle.js",
+  outfile: "./js-proxy-bundle.js",
   format: "iife",
   platform: "browser",
-  plugins: [
-    polyfillNode({}),
-  ],
   minify: true,
 }).then(() => {
   console.log("Service worker bundled successfully.");

@@ -11,8 +11,11 @@ const server = http.createServer((request, response) => {
     } else if (request.url == "/mantalon/mantalon_client_bg.wasm") {
         request.url = "/mantalon-client/pkg/mantalon_client_bg.wasm";
         internal = true;
-    } else if (request.url == "/sw_bundle.js") {
-        request.url = "/mantalon-portal/sw_bundle.js";
+    } else if (request.url == "/mantalon/config/js-proxy-bundle.js") {
+        request.url = "/mantalon-portal/js-proxy-bundle.js";
+        internal = true;
+    } else if (request.url == "/sw-bundle.js") {
+        request.url = "/mantalon-portal/sw-bundle.js";
         internal = true;
     }
     if (internal) {

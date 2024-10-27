@@ -1,0 +1,199 @@
+// Document URL and domain and referrer
+// Window/document location
+// Message passing
+// Cookies!
+// history
+
+interface Window {
+    proxiedWindow: typeof proxiedWindow;
+    proxiedDocument: typeof proxiedDocument;
+    proxiedLocation: typeof proxiedLocation;
+}
+
+const currentOrigin = "origin"; // Value is added automatically when the script gets injected
+const targetOrigins = new Set(["targetOrigins"]); // Value is added automatically when the script gets injected
+const currentHost = currentOrigin.split("://")[1];
+const currentHostname = currentOrigin.split("://")[1].split(":")[0];
+const currentPort = currentOrigin.split("://")[1].split(":")[1];
+const currentProtocol = currentOrigin.split("/")[0];
+
+function getFakedUrl(): URL {
+    let fakedUrl = new URL("http://localhost:8080");
+    fakedUrl.protocol = currentProtocol;
+    fakedUrl.host = currentHost;
+    return fakedUrl;
+}
+
+function setFakedUrl(target: URL) {
+    console.error("Setting faked URL to", target);
+    // TODO
+}
+
+// The location proxy
+
+const LOCATION_WHITELISTED: Set<string> = new Set(["hash", "pathname", "search", "reload", "toString"]);
+
+const locationHandler = {
+    get(targetLocation, prop, receiver) {
+        if (LOCATION_WHITELISTED.has(prop)) {
+            return Reflect.get(targetLocation, prop);
+        }
+
+        switch (prop) {
+            case "ancestorOrigins":
+                console.error("ancestorOrigins is not implemented. Returning empty array.");
+                return [];
+            case "host":
+                return currentHost;
+            case "hostname":
+                return currentHostname;
+            case "href":
+                let targetHref = targetLocation.href;
+                let targetOrigin = targetLocation.origin;
+                return currentOrigin + targetHref.substring(targetOrigin.length);
+            case "origin":
+                return currentOrigin;
+            case "port":
+                return currentPort;
+            case "protocol":
+                return currentProtocol;
+            case "assign":
+                return function (url) {
+                    let fakedUrl = new URL(url.toString());
+                    if (targetOrigins.has(fakedUrl.origin)) {
+                        setFakedUrl(fakedUrl);
+                        return true;
+                    }
+                    return targetLocation.assign(url);
+                };
+            case "replace":
+                return function (url) {
+                    let fakedUrl = new URL(url.toString());
+                    if (targetOrigins.has(fakedUrl.origin)) {
+                        setFakedUrl(fakedUrl);
+                        return true;
+                    }
+                    return targetLocation.replace(url);
+                };
+        }
+        
+        return undefined;
+    },
+
+    set(targetLocation, prop, value, receiver): boolean {
+        if (LOCATION_WHITELISTED.has(prop)) {
+            return Reflect.set(targetLocation, prop, value, receiver);
+        }
+
+        switch (prop) {
+            case "host":
+                if (value === currentHost) {
+                    return true;
+                }
+                if (targetOrigins.has(currentProtocol + "//" + value)) {
+                    let fakedUrl = getFakedUrl();
+                    fakedUrl.host = value;
+                    setFakedUrl(fakedUrl);
+                    return true;
+                }
+                return Reflect.set(targetLocation, "host", currentHost);
+            case "hostname":
+                if (value === currentHostname) {
+                    return true;
+                }
+                if (targetOrigins.has(currentProtocol + "://" + value + (currentPort ? ":" + currentPort : ""))) {
+                    let fakedUrl = getFakedUrl();
+                    fakedUrl.hostname = value;
+                    setFakedUrl(fakedUrl);
+                    return true;
+                }
+                return Reflect.set(targetLocation, "hostname", currentHostname);
+            case "href":
+                if (value === currentOrigin) {
+                    return true;
+                }
+                let fakedUrl = new URL(value);
+                if (targetOrigins.has(fakedUrl.origin)) {
+                    setFakedUrl(fakedUrl);
+                    return true;
+                }
+                return Reflect.set(targetLocation, "href", currentOrigin);
+            case "port":
+                if (value === currentPort) {
+                    return true;
+                }
+                if (targetOrigins.has(currentProtocol + "//" + currentHostname + ":" + value)) { // TODO: Handle special port cases
+                    let fakedUrl = getFakedUrl();
+                    fakedUrl.port = value;
+                    setFakedUrl(fakedUrl);
+                    return true;
+                }
+                return Reflect.set(targetLocation, "port", currentPort);
+            case "protocol":
+                if (value === currentProtocol) {
+                    return true;
+                }
+                if (targetOrigins.has(value + "://" + currentHostname + (currentPort ? ":" + currentPort : ""))) {
+                    let fakedUrl = getFakedUrl();
+                    fakedUrl.protocol = value;
+                    setFakedUrl(fakedUrl);
+                    return true;
+                }
+                return Reflect.set(targetLocation, "protocol", currentProtocol);
+        }
+
+        return false
+    }
+}
+const proxiedLocation = new Proxy(location, locationHandler);
+
+// The document proxy
+
+const documentHandler = {
+    get(targetDocument, prop, receiver) {
+        if (prop === "cookie") {
+            throw new Error("Unimplemented");
+        }
+        if (prop === "location") {
+            return proxiedLocation;
+        }
+        return Reflect.get(targetDocument, prop);
+    },
+
+    set(targetDocument, prop, value, receiver): boolean {
+        if (prop === "location" || prop === "cookie") {
+            throw new Error("Unimplemented");
+        }
+        return Reflect.set(targetDocument, prop, value, receiver);
+    }
+};
+const proxiedDocument = new Proxy(document, documentHandler);
+
+// The window proxy
+
+const windowHandler = {
+    get(targetWindow, prop, receiver) {
+        if (prop == "history") {
+            throw new Error("Unimplemented");
+        }
+        if (prop === "document") {
+            return proxiedDocument;
+        }
+        if (prop === "location") {
+            return proxiedLocation;
+        }
+        return Reflect.get(targetWindow, prop);
+    },
+
+    set(targetWindow, prop, value, receiver): boolean {
+        if (prop === "location" || prop === "history") {
+            throw new Error("Unimplemented");
+        }
+        return Reflect.set(targetWindow, prop, value, receiver);
+    }
+};
+const proxiedWindow = new Proxy(window, windowHandler);
+
+window.proxiedWindow = proxiedWindow;
+window.proxiedDocument = proxiedDocument;
+window.proxiedLocation = proxiedLocation;

@@ -1,3 +1,4 @@
 /target
 .DS_Store
 examples/insaplace/board_controller.js
+mantalon-portal/js-proxy-bundle.js
