@@ -11,13 +11,34 @@
                     "once": false
                 }
             ]
+        },
+        {
+            "matches": ["*://*"],
+            "content_type": ["text/html"],
+            "substitutions": [
+                {
+                    "pattern": " nonce=\"",
+                    "replacement": " data-initial-nonce=\"",
+                    "once": false
+                }
+            ]
         }
     ],
     "headers": [
         {
             "matches": ["*://*"],
             "add_headers": [
-                {"name": "Content-Security-Policy", "value": "default-src * 'unsafe-eval' 'unsafe-inline' data: filesystem: about: blob: ws: wss:"}
+                {
+                    "name": "Content-Security-Policy",
+                    "value": "default-src * 'unsafe-eval' 'unsafe-inline' data: filesystem: about: blob: ws: wss:",
+                    "direction": "client-bound"
+                }
+            ],
+            "remove_headers": [
+                {
+                    "name": "Content-Security-Policy-Report-Only",
+                    "direction": "client-bound"
+                }
             ]
         }
     ],

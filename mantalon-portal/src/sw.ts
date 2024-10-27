@@ -185,7 +185,7 @@ function addDefaultHeaders(headers: Headers, destination: RequestDestination, mo
 }
 
 function applyHeaderChanges(headers: Headers, url: URL, isRequest: boolean) {
-    let headersConfig = manifest.headers?.find((conf) => conf.matches.some((pattern) => pattern.test(url)));
+    let headersConfig = manifest.headers?.find((conf) => conf.test(url, ""));
     if (!headersConfig) {
         return;
     }
@@ -289,12 +289,12 @@ function applyJsProxyOnDoc(input) {
     return outputHtml;
 }
 
-async function applyJsProxy(response: Response, url: URL, contentType: string): Promise<string | undefined> {
+async function applyJsProxy(response: Response, url: URL, contentType: string, clientId: string): Promise<string | undefined> {
     if (!response.body) {
         return undefined;
     }
-
-    const jsProxyConfig = manifest.js_proxies?.find((conf) => conf.matches.some((pattern) => pattern.test(url)));
+    
+    const jsProxyConfig = manifest.js_proxies?.find((conf) => conf.test(url, contentType));
     if (!jsProxyConfig) {
         return undefined;
     }
@@ -303,18 +303,21 @@ async function applyJsProxy(response: Response, url: URL, contentType: string): 
         return undefined;
     }
 
+    // TODO: Add more content types
+    let bodyText;
     try {
-        // TODO: Add more content types
         if (contentType.includes("text/html")) {
-            let html = applyJsProxyOnDoc(await response.text());
+            bodyText = await response.text();
+            let html = applyJsProxyOnDoc(bodyText);
             let bundleResponse = await loadRessource("js-proxy-bundle.js");
             if (!bundleResponse) {
                 console.error("Failed to load JS proxy bundle");
                 return undefined;
             }
-
+    
             let content = await bundleResponse.text();
             content = content.replace(`="origin"`, `="${url.origin}"`);
+            content = content.replace(`="clientId"`, `="${clientId}"`);
             content = content.replace(`=new Set(["targetOrigins"])`, `=new Set(${JSON.stringify(manifest.targets)})`);
             if (!html.includes(content)) {
                 if (!html.includes("<head>")) {
@@ -326,22 +329,24 @@ async function applyJsProxy(response: Response, url: URL, contentType: string): 
             
             return html;
         } else if (contentType.includes("text/javascript")) {
-            return applyJsProxyOnJs(await response.text());
+            bodyText = await response.text();
+            return applyJsProxyOnJs(bodyText);
         }
-    } catch (e) {
-        console.error("Failed to apply JS proxy", e);
+    } catch(e) {
+        console.error(`Failed to apply JS proxy on ${url.href}: ${e}`);
+        return bodyText
     }
     
     return undefined;
 }
 
-async function applySubstitutions(response: Response | string, url: URL): Promise<string | undefined> {
+async function applySubstitutions(response: Response | string, url: URL, contentType: string): Promise<string | undefined> {
     if (response instanceof Response && response.body === null) {
         return undefined;
     }
 
-    let substitutionsConfig = manifest.substitutions?.find((conf) => conf.matches.some((pattern) => pattern.test(url)));
-    let contentScriptsConfig = manifest.content_scripts?.find((conf) => conf.matches.some((pattern) => pattern.test(url)));
+    let substitutionsConfig = manifest.substitutions?.find((conf) => conf.test(url, contentType));
+    let contentScriptsConfig = manifest.content_scripts?.find((conf) => conf.test(url, contentType));
 
     if (!substitutionsConfig && !contentScriptsConfig) {
         return undefined;
@@ -490,7 +495,7 @@ async function proxy(event: FetchEvent): Promise<Response> {
     }
 
     // Find the proxy config for the URL
-    let proxy_config = manifest.proxy_urls?.find((conf) => conf.matches.some((pattern) => pattern.test(url)));
+    let proxy_config = manifest.proxy_urls?.find((conf) => conf.test(url, ""));
     if (!proxy_config) {
         console.log("No proxy config found for ", url);
         return await fetch(event.request);
@@ -519,6 +524,7 @@ async function proxy(event: FetchEvent): Promise<Response> {
         body: requestBody ? requestBody[0] : undefined
     });
     let bodyOverride: string | undefined;
+    let contentType = initialResponse.headers.get("content-type") || "";
 
     // If the server asks for a single-chunk body, resend the request with the full body
     if (initialResponse.status == 411 && requestBody) {
@@ -574,13 +580,13 @@ async function proxy(event: FetchEvent): Promise<Response> {
     applyHeaderChanges(responseHeaders, url, false);
 
     // Apply js proxy
-    let jsProxyResult = await applyJsProxy(initialResponse, url, responseHeaders.get("content-type") || "");
+    let jsProxyResult = await applyJsProxy(initialResponse, url, contentType, event.clientId);
     if (jsProxyResult) {
         bodyOverride = jsProxyResult;
     }
 
     // Apply substitutions
-    let substitutionResults = await applySubstitutions(bodyOverride || initialResponse, url);
+    let substitutionResults = await applySubstitutions(bodyOverride || initialResponse, url, contentType);
     if (substitutionResults) {
         bodyOverride = substitutionResults;
     }
@@ -610,8 +616,8 @@ self.addEventListener("activate", (event) => {
     event.waitUntil(self.clients.claim());
 });
 
-self.addEventListener('message', event => {
-    if (event.data.type === 'mantalon-init-status') {
+self.addEventListener("message", event => {
+    if (event.data.type === "mantalon-init-status") {
         if (initError) {
             event.source?.postMessage({ type: "mantalon-init-error", error: initError });
         } else if (initSuccess) {
@@ -619,6 +625,9 @@ self.addEventListener('message', event => {
         } else {
             event.source?.postMessage({ type: "mantalon-init-waiting" });
         }
+    } else if (event.data.type === "mantalon-change-origin") {
+        clientOrigins.set(event.data.clientId, event.data.origin);
+        event.source?.postMessage({type: "mantalon-change-origin-success"});
     }
 });
 

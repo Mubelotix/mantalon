@@ -11,11 +11,19 @@ interface Window {
 }
 
 const currentOrigin = "origin"; // Value is added automatically when the script gets injected
+const clientId = "clientId"; // Value is added automatically when the script gets injected
 const targetOrigins = new Set(["targetOrigins"]); // Value is added automatically when the script gets injected
 const currentHost = currentOrigin.split("://")[1];
 const currentHostname = currentOrigin.split("://")[1].split(":")[0];
 const currentPort = currentOrigin.split("://")[1].split(":")[1];
 const currentProtocol = currentOrigin.split("/")[0];
+
+var mantalonWorker: ServiceWorker;
+navigator.serviceWorker.ready.then((registration) => {
+    if (registration.active) {
+        mantalonWorker = registration.active;
+    }
+});
 
 function getFakedUrl(): URL {
     let fakedUrl = new URL("http://localhost:8080");
@@ -24,9 +32,37 @@ function getFakedUrl(): URL {
     return fakedUrl;
 }
 
-function setFakedUrl(target: URL) {
-    console.error("Setting faked URL to", target);
-    // TODO
+async function setFakedUrl(target: URL) {
+    if (!mantalonWorker) {
+        throw new Error("Can't navigate until Mantalon is initialized");
+    }
+
+    mantalonWorker.postMessage({
+        type: "mantalon-change-origin",
+        origin: target.origin,
+        clientId: clientId
+    });
+
+    let waitResponse = new Promise((resolve, reject) => {
+        function handleResponse(event) {
+            if (event.data && event.data.type === "mantalon-change-origin-success") {
+                mantalonWorker.removeEventListener("message", handleResponse);
+                resolve(event.data);
+            } else if (event.data && event.data.type === "mantalon-change-origin-failure") {
+                mantalonWorker.removeEventListener("message", handleResponse);
+                reject(new Error("Failed to change origin"));
+            }
+        }
+
+        mantalonWorker.addEventListener("message", handleResponse);
+    });
+
+    await waitResponse;
+    
+    target.protocol = window.location.protocol;
+    target.hostname = window.location.hostname;
+    target.port = window.location.port;
+    window.location.href = target.toString();
 }
 
 function getAllPropertyNames(obj): Set<string> {

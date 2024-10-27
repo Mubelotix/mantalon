@@ -2,6 +2,8 @@
 export class UrlMatcher {
     matches: URLPattern[];
     exclude_matches?: URLPattern[];
+    content_types?: string[];
+    exclude_content_types?: string[];
 
     // TODO: Add fetch type
     
@@ -24,6 +26,30 @@ export class UrlMatcher {
             throw new Error("UrlMatcher.exclude_matches must be an array of string");
         }
         this.exclude_matches = exclude_matches.map((pattern) => new URLPattern(pattern));
+
+        let content_types: string[] | undefined = data.content_types;
+        if (content_types) {
+            if (!Array.isArray(content_types) || content_types.some((type) => typeof type !== "string")) {
+                throw new Error("UrlMatcher.content_types must be an array of string");
+            }
+            this.content_types = content_types;
+        }
+
+        let exclude_content_types: string[] | undefined = data.exclude_content_types;
+        if (exclude_content_types) {
+            if (!Array.isArray(exclude_content_types) || exclude_content_types.some((type) => typeof type !== "string")) {
+                throw new Error("UrlMatcher.exclude_content_types must be an array of string");
+            }
+            this.exclude_content_types = exclude_content_types;
+        }
+    }
+
+    test(url: URL, contentType: string): boolean {
+        let matchesPattern = this.matches.some((pattern) => pattern.test(url));
+        let matchesType = contentType == "" || !this.content_types || this.content_types.includes(contentType);
+        let dontMatchesExcludePattern = !this.exclude_matches || !this.exclude_matches.some((pattern) => pattern.test(url));
+        let dontMatchesExcludeType = contentType == "" || !this.exclude_content_types || !this.exclude_content_types.includes(contentType);
+        return matchesPattern && matchesType && dontMatchesExcludePattern && dontMatchesExcludeType;
     }
 }
 
@@ -31,8 +57,8 @@ export enum RequestDirection {
     SERVER_BOUND = "server-bound",
     CLIENT_BOUND = "client-bound",
     BOTH = "both",
-    REQUEST = CLIENT_BOUND,
-    RESPONSE = SERVER_BOUND,
+    REQUEST = SERVER_BOUND,
+    RESPONSE = CLIENT_BOUND,
 }
 
 export class ProxyConfig extends UrlMatcher {
