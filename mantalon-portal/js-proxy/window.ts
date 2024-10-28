@@ -22,8 +22,8 @@ export function makeProxiedWindow(
             if (prop === "window") {
                 return proxiedWindow;
             }
-            if (prop === "parent") {
-                let realParentWindow = realWindow.parent.window;
+            if (prop === "parent" || prop === "top") {
+                let realParentWindow = prop === "parent" ? realWindow.parent : realWindow.top;
                 if (
                     typeof realParentWindow === 'object'
                     && realParentWindow !== null
@@ -39,7 +39,7 @@ export function makeProxiedWindow(
                     console.error(`Parent window is not an instance of Window: ${realParentWindow}`);
                 }
             }
-            if (prop === "postMessage" || prop === "parent" || prop == "top" || prop === "cookieStore") {
+            if (prop === "postMessage" || prop === "cookieStore") {
                 console.warn(prop + " (get) is not implemented: page might detect the proxy");
             }
     
@@ -55,7 +55,7 @@ export function makeProxiedWindow(
                 proxiedLocation.href = value;
                 return true;
             }
-            if (prop === "postMessage" || prop === "parent" || prop == "top" || prop === "cookieStore") {
+            if (prop === "postMessage" || prop === "cookieStore") {
                 console.warn(prop + " (set) is not implemented: page might detect the proxy");
             }
     
