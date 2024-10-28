@@ -7,8 +7,8 @@ import { config } from "process";
 import { loadManifest, loadRessource, Manifest, RequestDirection, RewriteConfig, Substitution, SubstitutionConfig } from "./manifest";
 import { Cookie, CookieJar } from "tough-cookie";
 import { URLPattern } from "urlpattern-polyfill"; // TODO: When URLPatterns reaches baseline, remove this polyfill
-const recast = require('recast');
-const parse5 = require('parse5');
+const recast = require("recast");
+const parse5 = require("parse5");
 
 type ProxiedFetchType = (arg1: any, arg2?: any) => Promise<Response>;
 
@@ -316,7 +316,10 @@ async function applyJsProxy(response: Response, url: URL, contentType: string, c
             }
     
             let content = await bundleResponse.text();
+            const matchingCookies = await cookieJar.getCookies(url); // TODO: Support http-only cookie attributes
+            const cookieString = matchingCookies.map(cookie => `${cookie.key}=${cookie.value}`).join(';');
             content = content.replace(`="origin"`, `="${url.origin}"`);
+            content = content.replace(`="cookies"`, `="${cookieString}"`);
             content = content.replace(`="clientId"`, `="${clientId}"`);
             content = content.replace(`=new Set(["targetOrigins"])`, `=new Set(${JSON.stringify(manifest.targets)})`);
             if (!html.includes(content)) {
@@ -429,6 +432,34 @@ async function applySubstitutions(response: Response | string, url: URL, content
         }
     }
     return body;
+}
+
+async function sendCookiesToClient(url: URL) {
+    const matchingCookies = await cookieJar.getCookies(url.href);
+    const cookieString = matchingCookies.map(cookie => `${cookie.key}=${cookie.value}`).join(';');
+    self.clients.matchAll().then(clients => {
+        for (let client of clients) {
+            if (clientOrigins.get(client.id)?.startsWith(url.origin)) {
+                client.postMessage({type: "mantalon-update-client-cookies", cookies: cookieString});
+            }
+        }
+    });
+}
+
+async function updateCookieFromClient(url: URL, cookie: string) {
+    let resCookie = Cookie.parse(cookie);
+    if (!resCookie) {
+        console.error("Failed to parse cookie from client");
+        return;
+    }
+
+    resCookie = await cookieJar.setCookie(resCookie, url);
+    if (!resCookie) {
+        console.error("Failed to set cookie from client");
+        return;
+    }
+    
+    await sendCookiesToClient(url);
 }
 
 async function proxy(event: FetchEvent): Promise<Response> {
@@ -563,17 +594,18 @@ async function proxy(event: FetchEvent): Promise<Response> {
     }
 
     // Update cookies
+    let cookieChanged = false;
     for (let [name, value] of responseHeaders.entries()) {
         if (name.startsWith("x-mantalon-set-cookie-")) {
-            try {
-                const resCookie = Cookie.parse(value);
-                if (resCookie) {
-                    cookieJar.setCookie(resCookie, url);
-                }
-            } catch (e) {
-                console.error("Failed to parse set-cookie header", e);
+            const resCookie = Cookie.parse(value);
+            if (resCookie) {
+                cookieJar.setCookie(resCookie, url);
+                cookieChanged = true;
             }
         }
+    }
+    if (cookieChanged) {
+        sendCookiesToClient(url);
     }
 
     // Apply header changes
@@ -628,6 +660,10 @@ self.addEventListener("message", event => {
     } else if (event.data.type === "mantalon-change-origin") {
         clientOrigins.set(event.data.clientId, event.data.origin);
         event.source?.postMessage({type: "mantalon-change-origin-success"});
+    } else if (event.data.type === "mantalon-update-sw-cookie") {
+        updateCookieFromClient(new URL(event.data.href), event.data.cookie);
+    } else {
+        console.error("Unknown message type", event.data.type);
     }
 });
 

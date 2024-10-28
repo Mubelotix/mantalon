@@ -13,9 +13,10 @@ interface Window {
 const currentOrigin = "origin"; // Value is added automatically when the script gets injected
 const clientId = "clientId"; // Value is added automatically when the script gets injected
 const targetOrigins = new Set(["targetOrigins"]); // Value is added automatically when the script gets injected
+var cookies = "cookies"; // Value is added automatically when the script gets injected
 const currentHost = currentOrigin.split("://")[1];
 const currentHostname = currentOrigin.split("://")[1].split(":")[0];
-const currentPort = currentOrigin.split("://")[1].split(":")[1];
+const currentPort = currentOrigin.split("://")[1].split(":")[1] || "443"; // FIXME: Handle http port
 const currentProtocol = currentOrigin.split("/")[0];
 
 var mantalonWorker: ServiceWorker;
@@ -25,10 +26,19 @@ navigator.serviceWorker.ready.then((registration) => {
     }
 });
 
+navigator.serviceWorker.addEventListener("message", event => {
+    if (event.data.type === "mantalon-update-client-cookies") {
+        cookies = event.data.cookies;
+    } else if (event.data.type.startsWith("mantalon-")) {
+        console.log("Received message from Mantalon", event.data);
+    }
+});
+
 function getFakedUrl(): URL {
-    let fakedUrl = new URL("http://localhost:8080");
+    let fakedUrl = new URL(window.location.href);
     fakedUrl.protocol = currentProtocol;
     fakedUrl.host = currentHost;
+    fakedUrl.port = currentPort;
     return fakedUrl;
 }
 
@@ -213,7 +223,10 @@ const documentHandler = {
         if (prop === "location") {
             return proxiedLocation;
         }
-        if (prop === "URL" || prop === "cookie" || prop === "referer") {
+        if (prop === "cookie") {
+            return cookies;
+        }
+        if (prop === "URL" || prop === "referer") {
             console.warn(prop + " (get) is not implemented: page might detect the proxy");
         }
 
@@ -227,6 +240,14 @@ const documentHandler = {
     set(targetDocument, prop, value, receiver): boolean {
         if (prop === "location") {
             setFakedUrl(value);
+            return true;
+        }
+        if (prop === "cookie") {
+            mantalonWorker.postMessage({
+                type: "mantalon-update-sw-cookie",
+                href: getFakedUrl().href,
+                cookie: value
+            });
             return true;
         }
         if (prop === "URL" || prop === "cookie" || prop === "referer") {
