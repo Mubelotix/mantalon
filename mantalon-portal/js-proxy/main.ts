@@ -1,6 +1,8 @@
 // TODO: Message passing
 // TODO: Parent window
 
+import { get } from "http";
+
 interface Window {
     proxiedWindow: typeof proxiedWindow;
     proxiedDocument: typeof proxiedDocument;
@@ -94,7 +96,7 @@ const locationHandler = {
     get(targetLocation, prop, receiver) {
         if (LOCATION_WHITELISTED.has(prop)) {
             const value = Reflect.get(targetLocation, prop);
-            if (typeof value === 'function' && locationInitialMethods.has(prop)) {
+            if (typeof value === "function" && locationInitialMethods.has(prop)) {
                 return value.bind(targetLocation);
             }
             return value;
@@ -211,6 +213,30 @@ const locationHandler = {
 }
 const proxiedLocation = new Proxy(location, locationHandler);
 
+// The media element proxy
+
+const elementHandler = {
+    get(targetElement, prop, receiver) {
+        const value = Reflect.get(targetElement, prop);
+        
+        if (typeof value === 'function' && value.toString().includes('[native code]')) {
+            return value.bind(targetElement);
+        }
+
+        return value;
+    },
+
+    set(targetElement, prop, value, receiver): boolean {
+        console.warn("Setting", prop, "to", value);
+
+        if (prop == "src") {
+            console.warn("Setting src to", value);
+        }
+
+        return Reflect.set(targetElement, prop, value);
+    }
+}
+
 // The document proxy
 
 const documentInitialMethods = getAllPropertyNames(document);
@@ -233,8 +259,27 @@ const documentHandler = {
             return currentHostname;
         }
 
+        if (prop === "createElement") {
+            return function (tagName: string, options) {
+                if (tagName.toUpperCase() === "IFRAME") {
+                    console.warn("Creating iframe element");
+                    let iframe = targetDocument.createElement(tagName, options);
+                    console.warn("Created iframe element", iframe);
+                    let iframeProxy = new Proxy(iframe, elementHandler);
+                    console.warn("Created iframe proxy", iframeProxy);
+                    return iframeProxy;
+                } else {
+                    return targetDocument.createElement(tagName, options);
+                }
+            };
+        }
+
+        if (prop === "createElementNS") {
+            console.error(`${prop} (get) is not implemented: page might detect the proxy`);
+        }
+
         const value = Reflect.get(targetDocument, prop);
-        if (typeof value === 'function' && documentInitialMethods.has(prop)) {
+        if (typeof value === "function" && documentInitialMethods.has(prop)) {
             return value.bind(targetDocument);
         }
         return value;
@@ -282,7 +327,7 @@ const windowHandler = {
         }
 
         const value = Reflect.get(targetWindow, prop);
-        if (typeof value === 'function' && windowInitialMethods.has(prop)) {
+        if (typeof value === "function" && windowInitialMethods.has(prop)) {
             return value.bind(targetWindow);
         }
         return value;
