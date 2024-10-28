@@ -1,5 +1,5 @@
 import { makeProxiedDocument } from "./document";
-import { makeProxiedLocation } from "./location";
+import { fromFakeUrl, makeProxiedLocation } from "./location";
 import { getAllPropertyNames } from "./main";
 
 export function makeProxiedWindow(
@@ -19,7 +19,7 @@ export function makeProxiedWindow(
             if (prop === "location") {
                 return proxiedLocation;
             }
-            if (prop === "window") {
+            if (prop === "window" || prop === "self") {
                 return proxiedWindow;
             }
             if (prop === "parent" || prop === "top") {
@@ -39,7 +39,15 @@ export function makeProxiedWindow(
                     console.error(`Parent window is not an instance of Window: ${realParentWindow}`);
                 }
             }
-            if (prop === "postMessage" || prop === "cookieStore") {
+            if (prop === "postMessage") {
+                const realLocation = realWindow.location;
+                return function (message, fakeTargetOrigin, transfer) {
+                    let realTargetOrigin = fromFakeUrl(fakeTargetOrigin, realLocation.protocol, realLocation.hostname, realLocation.port).origin;
+                    console.log(`postMessage: ${message} to ${fakeTargetOrigin} (${realTargetOrigin})`);
+                    return realWindow.postMessage(message, realTargetOrigin, transfer);
+                };
+            }
+            if (prop === "cookieStore" || prop === "onmessage" || prop === "onmessageerror" || prop === "addEventListener" || prop === "removeEventListener") {
                 console.warn(prop + " (get) is not implemented: page might detect the proxy");
             }
     
@@ -55,7 +63,7 @@ export function makeProxiedWindow(
                 proxiedLocation.href = value;
                 return true;
             }
-            if (prop === "postMessage" || prop === "cookieStore") {
+            if (prop === "cookieStore" || prop === "onmessage" || prop === "onmessageerror") {
                 console.warn(prop + " (set) is not implemented: page might detect the proxy");
             }
     

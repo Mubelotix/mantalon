@@ -1,5 +1,4 @@
 // TODO: Message passing
-// TODO: Parent window
 // TODO: window.cookieStore
 
 import { makeProxiedDocument } from "./document";
