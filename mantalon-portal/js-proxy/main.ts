@@ -225,7 +225,7 @@ const documentHandler = {
         if (prop === "cookie") {
             return cookies;
         }
-        if (prop === "URL" || prop === "documentURI") {
+        if (prop === "URL" || prop === "documentURI" || prop === "baseURI") {
             return getFakedUrl().href;
         }
         if (prop === "referrer") {
@@ -255,7 +255,7 @@ const documentHandler = {
             });
             return true;
         }
-        if (prop === "URL" || prop == "documentURI" || prop === "referer" || prop === "domain") {
+        if (prop === "URL" || prop == "documentURI" || prop === "baseURI" || prop === "referer" || prop === "domain") {
             console.warn(prop + " (set) is not implemented: page might detect the proxy");
         }
 
