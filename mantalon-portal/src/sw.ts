@@ -17,41 +17,13 @@ export function orDefault(value: any, fallback: any) {
     return value !== undefined ? value : fallback;
 }
 
-var clientOrigins = new Map<string, string>();
+export var clientOrigins = new Map<string, string>();
 export var cookieJar = new CookieJar();
 
 var initSuccess = false;
 var initError = null;
 export var manifest: Manifest;
 var globalProxiedFetch: ProxiedFetchType;
-
-async function sendCookiesToClient(url: URL) {
-    const matchingCookies = await cookieJar.getCookies(url.href);
-    const cookieString = matchingCookies.map(cookie => `${cookie.key}=${cookie.value}`).join(';');
-    self.clients.matchAll().then(clients => {
-        for (let client of clients) {
-            if (clientOrigins.get(client.id)?.startsWith(url.origin)) {
-                client.postMessage({type: "mantalon-update-client-cookies", cookies: cookieString});
-            }
-        }
-    });
-}
-
-async function updateCookieFromClient(url: URL, cookie: string) {
-    let resCookie = Cookie.parse(cookie);
-    if (!resCookie) {
-        console.error("Failed to parse cookie from client");
-        return;
-    }
-
-    resCookie = await cookieJar.setCookie(resCookie, url);
-    if (!resCookie) {
-        console.error("Failed to set cookie from client");
-        return;
-    }
-    
-    await sendCookiesToClient(url);
-}
 
 async function proxy(event: FetchEvent): Promise<Response> {
     // Get the actual URL of the request
@@ -281,3 +253,11 @@ try {
     initError = e;
     console.error("Failed to load Mantalon", e);
 }
+function sendCookiesToClient(url: URL) {
+    throw new Error("Function not implemented.");
+}
+
+function updateCookieFromClient(arg0: URL, cookie: any) {
+    throw new Error("Function not implemented.");
+}
+
