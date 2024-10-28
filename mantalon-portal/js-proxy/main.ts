@@ -324,6 +324,9 @@ const windowHandler = {
         if (prop === "location") {
             return proxiedLocation;
         }
+        if (prop === "window") {
+            return proxiedWindow;
+        }
         if (prop === "postMessage" || prop === "parent" || prop == "top" || prop === "cookieStore") {
             console.warn(prop + " (get) is not implemented: page might detect the proxy");
         }
