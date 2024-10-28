@@ -213,6 +213,9 @@ const documentHandler = {
         if (prop === "location") {
             return proxiedLocation;
         }
+        if (prop === "URL" || prop === "cookie" || prop === "referer") {
+            console.warn(prop + " (get) is not implemented: page might detect the proxy");
+        }
 
         const value = Reflect.get(targetDocument, prop);
         if (typeof value === 'function' && documentInitialMethods.has(prop)) {
@@ -226,6 +229,10 @@ const documentHandler = {
             setFakedUrl(value);
             return true;
         }
+        if (prop === "URL" || prop === "cookie" || prop === "referer") {
+            console.warn(prop + " (set) is not implemented: page might detect the proxy");
+        }
+
         if (typeof value === 'function' && documentInitialMethods.has(prop)) {
             return Reflect.set(targetDocument, prop, value.bind(targetDocument));
         }
@@ -246,6 +253,9 @@ const windowHandler = {
         if (prop === "location") {
             return proxiedLocation;
         }
+        if (prop === "history" || prop === "postMessage" || prop === "parent") {
+            console.warn(prop + " (get) is not implemented: page might detect the proxy");
+        }
 
         const value = Reflect.get(targetWindow, prop);
         if (typeof value === 'function' && windowInitialMethods.has(prop)) {
@@ -258,6 +268,9 @@ const windowHandler = {
         if (prop === "location") {
             setFakedUrl(value);
             return true;
+        }
+        if (prop === "history" || prop === "postMessage" || prop === "parent") {
+            console.warn(prop + " (set) is not implemented: page might detect the proxy");
         }
 
         if (typeof value === 'function' && windowInitialMethods.has(prop)) {
