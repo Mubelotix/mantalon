@@ -1,5 +1,4 @@
 // TODO: Message passing
-// TODO: History
 // TODO: Parent window
 
 interface Window {
@@ -278,7 +277,7 @@ const windowHandler = {
         if (prop === "location") {
             return proxiedLocation;
         }
-        if (prop === "history" || prop === "postMessage" || prop === "parent") {
+        if (prop === "postMessage" || prop === "parent") {
             console.warn(prop + " (get) is not implemented: page might detect the proxy");
         }
 
@@ -294,7 +293,7 @@ const windowHandler = {
             setFakedUrl(value);
             return true;
         }
-        if (prop === "history" || prop === "postMessage" || prop === "parent") {
+        if (prop === "postMessage" || prop === "parent") {
             console.warn(prop + " (set) is not implemented: page might detect the proxy");
         }
 
