@@ -225,8 +225,14 @@ const documentHandler = {
         if (prop === "cookie") {
             return cookies;
         }
-        if (prop === "URL" || prop === "referer") {
-            console.warn(prop + " (get) is not implemented: page might detect the proxy");
+        if (prop === "URL" || prop === "documentURI") {
+            return getFakedUrl().href;
+        }
+        if (prop === "referrer") {
+            return currentOrigin;
+        }
+        if (prop === "domain") {
+            return currentHostname;
         }
 
         const value = Reflect.get(targetDocument, prop);
@@ -249,7 +255,7 @@ const documentHandler = {
             });
             return true;
         }
-        if (prop === "URL" || prop === "cookie" || prop === "referer") {
+        if (prop === "URL" || prop == "documentURI" || prop === "referer" || prop === "domain") {
             console.warn(prop + " (set) is not implemented: page might detect the proxy");
         }
 
