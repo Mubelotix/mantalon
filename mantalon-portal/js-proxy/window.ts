@@ -1,23 +1,25 @@
 import { makeProxiedDocument } from "./document";
 import { fromFakeUrl, makeProxiedLocation } from "./location";
 import { getAllPropertyNames } from "./main";
+import { makeProxiedMessageEvent } from "./message";
 
 export function makeProxiedWindow(
     realWindow: Window,
     targetOrigins: Set<string>,
-    proxiedDocument,
-    proxiedLocation,
+    fakeDocument,
+    fakeLocation,
 ) {
     const windowInitialMethods = getAllPropertyNames(realWindow);
 
     let proxiedWindow;
+    const realLocation = realWindow.location;
     const windowHandler = {
         get(realWindow, prop, receiver) {
             if (prop === "document") {
-                return proxiedDocument;
+                return fakeDocument;
             }
             if (prop === "location") {
-                return proxiedLocation;
+                return fakeLocation;
             }
             if (prop === "window" || prop === "self") {
                 return proxiedWindow;
@@ -32,22 +34,41 @@ export function makeProxiedWindow(
                 ) {
                     let realParentLocation = realParentWindow.location;
                     let realParentDocument = realParentWindow.document;
-                    let fakeParentLocation = makeProxiedLocation(realParentLocation, proxiedLocation.origin, proxiedLocation.hostname, proxiedLocation.origin, proxiedLocation.protocol, proxiedLocation.port, targetOrigins); // FIXME: This is not correct, you could very well expect the parent to be in a different origin
-                    let fakeParentDocument = makeProxiedDocument(realParentDocument, proxiedDocument.cookie, fakeParentLocation);
+                    let fakeParentLocation = makeProxiedLocation(realParentLocation, fakeLocation.origin, fakeLocation.hostname, fakeLocation.origin, fakeLocation.protocol, fakeLocation.port, targetOrigins); // FIXME: This is not correct, you could very well expect the parent to be in a different origin
+                    let fakeParentDocument = makeProxiedDocument(realParentDocument, fakeDocument.cookie, fakeParentLocation);
                     return makeProxiedWindow(realParentWindow, targetOrigins, fakeParentDocument, fakeParentLocation);
                 } else {
                     console.error(`Parent window is not an instance of Window: ${realParentWindow}`);
                 }
             }
             if (prop === "postMessage") {
-                const realLocation = realWindow.location;
                 return function (message, fakeTargetOrigin, transfer) {
                     let realTargetOrigin = fromFakeUrl(fakeTargetOrigin, realLocation.protocol, realLocation.hostname, realLocation.port).origin;
                     console.log(`postMessage: ${message} to ${fakeTargetOrigin} (${realTargetOrigin})`);
-                    return realWindow.postMessage(message, realTargetOrigin, transfer);
+                    return realWindow.postMessage({
+                        actualMessage: message,
+                        fakeOrigin: fakeLocation.origin,
+                    }, realTargetOrigin, transfer);
                 };
             }
-            if (prop === "cookieStore" || prop === "onmessage" || prop === "onmessageerror" || prop === "addEventListener" || prop === "removeEventListener") {
+            if (prop === "addEventListener") {
+                return function (type, listener, options) {
+                    if (type === "message") {
+                        let listenerWrapper = function (event: MessageEvent) {
+                            if (event.origin === realLocation.origin) {
+                                let actualMessage = event.data.actualMessage;
+                                let fakeOrigin = event.data.fakeOrigin;
+                                return listener(makeProxiedMessageEvent(event, actualMessage, fakeOrigin));
+                            }
+                            return listener(event);
+                        }
+                        return realWindow.addEventListener(type, listenerWrapper, options);
+                    } else {
+                        return realWindow.addEventListener(type, listener, options);
+                    }
+                };
+            }
+            if (prop === "cookieStore" || prop === "onmessage" || prop === "onmessageerror" || prop === "removeEventListener") {
                 console.warn(prop + " (get) is not implemented: page might detect the proxy");
             }
     
@@ -60,7 +81,7 @@ export function makeProxiedWindow(
     
         set(realWindow, prop, value, receiver) {
             if (prop === "location") {
-                proxiedLocation.href = value;
+                fakeLocation.href = value;
                 return true;
             }
             if (prop === "cookieStore" || prop === "onmessage" || prop === "onmessageerror") {
