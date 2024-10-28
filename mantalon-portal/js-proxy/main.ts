@@ -98,6 +98,7 @@ const proxiedDocument = makeProxiedDocument(
 );
 const proxiedWindow = makeProxiedWindow(
     window,
+    targetOrigins,
     proxiedDocument,
     proxiedLocation
 );

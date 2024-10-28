@@ -26,6 +26,9 @@ export function makeProxiedDocument(
             if (prop === "domain") {
                 return proxiedLocation.hostname;
             }
+            if (prop === "defaultView") {
+                console.warn("defaultView is not implemented: page might detect the proxy");
+            }
 
             const value = Reflect.get(realDocument, prop);
             if (typeof value === "function" && documentInitialMethods.has(prop)) {
