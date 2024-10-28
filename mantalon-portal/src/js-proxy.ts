@@ -37,6 +37,12 @@ function applyJsProxyOnJs(input: string): string {
             } else if (path.node.name === "location") {
                 path.replace(recast.types.builders.identifier("proxiedLocation"));
                 return false;
+            // } else if (path.node.name === "self") {
+            //     path.replace(recast.types.builders.identifier("proxiedSelf"));
+            //     return false;
+            // } else if (path.node.name === "globalThis") {
+            //     path.replace(recast.types.builders.identifier("proxiedGlobalThis"));
+            //     return false;
             }
 
             this.traverse(path);
@@ -87,7 +93,29 @@ function applyJsProxyOnDoc(input) {
     return outputHtml;
 }
 
-export async function applyJsProxy(response: Response, url: URL, contentType: string, clientId: string): Promise<string | undefined> {
+async function loadProxyInitializer(url: URL): Promise<string | undefined> {
+    let bundleResponse = await loadRessource("js-proxy-bundle.js");
+    if (!bundleResponse) {
+        console.error("Failed to load JS proxy bundle");
+        return undefined;
+    }
+
+    let content = await bundleResponse.text();
+    const matchingCookies = await cookieJar.getCookies(url); // TODO: Support http-only cookie attributes
+    const cookieString = matchingCookies.map(cookie => `${cookie.key}=${cookie.value}`).join(';');
+    content = content.replace(`"init-origin"`, `"${url.origin}"`);
+    content = content.replace(`"init-cookies"`, `"${cookieString}"`);
+    content = content.replace(`new Set(["init-targetOrigins"])`, `new Set(${JSON.stringify(manifest.targets)})`);
+
+    return content;
+}
+
+export async function applyJsProxy(
+    response: Response,
+    url: URL,
+    contentType: string,
+    destination: RequestDestination
+): Promise<string | undefined> {
     if (!response.body) {
         return undefined;
     }
@@ -102,40 +130,47 @@ export async function applyJsProxy(response: Response, url: URL, contentType: st
     }
 
     // TODO: Add more content types
-    let bodyText;
+    let bodyText: string;
     try {
         if (contentType.includes("text/html")) {
             bodyText = await response.text();
             let html = applyJsProxyOnDoc(bodyText);
-            let bundleResponse = await loadRessource("js-proxy-bundle.js");
-            if (!bundleResponse) {
-                console.error("Failed to load JS proxy bundle");
+            let proxyInitializer = await loadProxyInitializer(url);
+            if (!proxyInitializer) {
+                console.error("Failed to load JS proxy initializer");
                 return undefined;
             }
-    
-            let content = await bundleResponse.text();
-            const matchingCookies = await cookieJar.getCookies(url); // TODO: Support http-only cookie attributes
-            const cookieString = matchingCookies.map(cookie => `${cookie.key}=${cookie.value}`).join(';');
-            content = content.replace(`"init-origin"`, `"${url.origin}"`);
-            content = content.replace(`"init-cookies"`, `"${cookieString}"`);
-            content = content.replace(`"init-clientId"`, `"${clientId}"`);
-            content = content.replace(`new Set(["init-targetOrigins"])`, `new Set(${JSON.stringify(manifest.targets)})`);
-            if (!html.includes(content)) {
+
+            if (!html.includes(proxyInitializer)) {
                 if (!html.includes("<head>")) {
                     console.error("Failed to inject JS proxy bundle: <head> not found in document");
                     return undefined;
                 }
-                html = html.replace("<head>", `<head><script>${content}</script>`);
+                html = html.replace("<head>", `<head><script>${proxyInitializer}</script>`);
             }
             
             return html;
         } else if (contentType.includes("text/javascript")) {
             bodyText = await response.text();
-            return applyJsProxyOnJs(bodyText);
+            bodyText =  applyJsProxyOnJs(bodyText);
+
+            if (destination === "worker") {
+                let proxyInitializer = await loadProxyInitializer(url);
+                if (!proxyInitializer) {
+                    console.error("Failed to load JS proxy initializer");
+                    return undefined;
+                }
+
+                if (!bodyText.includes(proxyInitializer)) {
+                    bodyText = `${proxyInitializer}\n${bodyText}`;
+                }
+            }
+
+            return bodyText;
         }
     } catch(e) {
         console.error(`Failed to apply JS proxy on ${url.href}: ${e}`);
-        return bodyText
+        return undefined;
     }
     
     return undefined;

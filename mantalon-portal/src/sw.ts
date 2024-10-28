@@ -174,7 +174,7 @@ async function proxy(event: FetchEvent): Promise<Response> {
     applyHeaderChanges(responseHeaders, url, false);
 
     // Apply js proxy
-    let jsProxyResult = await applyJsProxy(initialResponse, url, contentType, event.clientId);
+    let jsProxyResult = await applyJsProxy(initialResponse, url, contentType, event.request.destination);
     if (jsProxyResult) {
         bodyOverride = jsProxyResult;
     }

@@ -1,33 +1,41 @@
 import { makeProxiedLocation } from "./location";
 import { getAllPropertyNames, mantalonWorker } from "./main";
+import { makeProxiedWindow } from "./window";
 
 
 export function makeProxiedDocument(
     realDocument: Document,
     cookies: string,
-    proxiedLocation,
+    targetOrigins: Set<string>,
+    fakeLocation,
 ) {
     const documentInitialMethods = getAllPropertyNames(realDocument);
 
     const documentHandler = {
         get(realDocument, prop, receiver) {
             if (prop === "location") {
-                return proxiedLocation;
+                return fakeLocation;
             }
             if (prop === "cookie") {
                 return cookies;
             }
             if (prop === "URL" || prop === "documentURI" || prop === "baseURI") {
-                return proxiedLocation.href;
+                return fakeLocation.href;
             }
             if (prop === "referrer") {
-                return proxiedLocation.origin;
+                return fakeLocation.origin;
             }
             if (prop === "domain") {
-                return proxiedLocation.hostname;
+                return fakeLocation.hostname;
             }
             if (prop === "defaultView") {
-                console.warn("defaultView is not implemented: page might detect the proxy");
+                console.warn("defaultView is badly implemented. Returning the global");
+                return makeProxiedWindow(
+                    window,
+                    targetOrigins,
+                    receiver,
+                    fakeLocation
+                )
             }
 
             const value = Reflect.get(realDocument, prop);
@@ -39,13 +47,13 @@ export function makeProxiedDocument(
 
         set(realDocument, prop, value, receiver): boolean {
             if (prop === "location") {
-                proxiedLocation.href = value;
+                fakeLocation.href = value;
                 return true;
             }
             if (prop === "cookie") {
                 mantalonWorker.postMessage({
                     type: "mantalon-update-sw-cookie",
-                    href: proxiedLocation.href,
+                    href: fakeLocation.href,
                     cookie: value
                 });
                 return true;

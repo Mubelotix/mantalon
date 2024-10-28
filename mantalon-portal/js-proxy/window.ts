@@ -11,7 +11,7 @@ export function makeProxiedWindow(
 ) {
     const windowInitialMethods = getAllPropertyNames(realWindow);
 
-    let proxiedWindow;
+    let fakeWindow;
     const realLocation = realWindow.location;
     const windowHandler = {
         get(realWindow, prop, receiver) {
@@ -22,7 +22,7 @@ export function makeProxiedWindow(
                 return fakeLocation;
             }
             if (prop === "window" || prop === "self") {
-                return proxiedWindow;
+                return fakeWindow;
             }
             if (prop === "parent" || prop === "top") {
                 let realParentWindow = prop === "parent" ? realWindow.parent : realWindow.top;
@@ -35,7 +35,7 @@ export function makeProxiedWindow(
                     let realParentLocation = realParentWindow.location;
                     let realParentDocument = realParentWindow.document;
                     let fakeParentLocation = makeProxiedLocation(realParentLocation, fakeLocation.origin, fakeLocation.hostname, fakeLocation.origin, fakeLocation.protocol, fakeLocation.port, targetOrigins); // FIXME: This is not correct, you could very well expect the parent to be in a different origin
-                    let fakeParentDocument = makeProxiedDocument(realParentDocument, fakeDocument.cookie, fakeParentLocation);
+                    let fakeParentDocument = makeProxiedDocument(realParentDocument, fakeDocument.cookie, targetOrigins, fakeParentLocation);
                     return makeProxiedWindow(realParentWindow, targetOrigins, fakeParentDocument, fakeParentLocation);
                 } else {
                     console.error(`Parent window is not an instance of Window: ${realParentWindow}`);
@@ -95,6 +95,6 @@ export function makeProxiedWindow(
         }
     };
     
-    proxiedWindow = new Proxy(window, windowHandler);
-    return proxiedWindow;
+    fakeWindow = new Proxy(realWindow, windowHandler);
+    return fakeWindow;
 }
