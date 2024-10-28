@@ -1,4 +1,3 @@
-// TODO: Document URL and domain and referrer
 // TODO: Message passing
 // TODO: History
 // TODO: Parent window
