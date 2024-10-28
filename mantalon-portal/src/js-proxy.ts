@@ -116,10 +116,10 @@ export async function applyJsProxy(response: Response, url: URL, contentType: st
             let content = await bundleResponse.text();
             const matchingCookies = await cookieJar.getCookies(url); // TODO: Support http-only cookie attributes
             const cookieString = matchingCookies.map(cookie => `${cookie.key}=${cookie.value}`).join(';');
-            content = content.replace(`="origin"`, `="${url.origin}"`);
-            content = content.replace(`="cookies"`, `="${cookieString}"`);
-            content = content.replace(`="clientId"`, `="${clientId}"`);
-            content = content.replace(`=new Set(["targetOrigins"])`, `=new Set(${JSON.stringify(manifest.targets)})`);
+            content = content.replace(`"origin"`, `"${url.origin}"`);
+            content = content.replace(`"cookies"`, `"${cookieString}"`);
+            content = content.replace(`"clientId"`, `"${clientId}"`);
+            content = content.replace(`new Set(["targetOrigins"])`, `new Set(${JSON.stringify(manifest.targets)})`);
             if (!html.includes(content)) {
                 if (!html.includes("<head>")) {
                     console.error("Failed to inject JS proxy bundle: <head> not found in document");

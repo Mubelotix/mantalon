@@ -6,7 +6,7 @@ esbuild.build({
   outfile: "./js-proxy-bundle.js",
   format: "iife",
   platform: "browser",
-  minify: true,
+  minify: false,
 }).then(() => {
   console.log("JS proxy script bundled successfully.");
 }).catch(() => process.exit(1));
