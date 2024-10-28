@@ -3,10 +3,8 @@
 export type {};
 declare let self: ServiceWorkerGlobalScope;
 
-import { config } from "process";
-import { loadManifest, loadRessource, Manifest, RequestDirection, RewriteConfig, Substitution, SubstitutionConfig } from "./manifest";
+import { loadManifest, Manifest, RewriteConfig } from "./manifest";
 import { Cookie, CookieJar } from "tough-cookie";
-import { URLPattern } from "urlpattern-polyfill"; // TODO: When URLPatterns reaches baseline, remove this polyfill
 import { applyJsProxy } from "./js-proxy";
 import { addDefaultHeaders, applyHeaderChanges } from "./headers";
 import { applySubstitutions } from "./substitutions";

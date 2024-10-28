@@ -1,3 +1,4 @@
+import { URLPattern } from "urlpattern-polyfill"; // TODO: When URLPatterns reaches baseline, remove this polyfill
 
 export class UrlMatcher {
     matches: URLPattern[];
