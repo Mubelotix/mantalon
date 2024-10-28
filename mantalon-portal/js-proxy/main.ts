@@ -1,5 +1,6 @@
 // TODO: Message passing
 // TODO: Parent window
+// TODO: window.cookieStore
 
 interface Window {
     proxiedWindow: typeof proxiedWindow;
@@ -31,12 +32,24 @@ navigator.serviceWorker.addEventListener("message", event => {
     }
 });
 
-function getFakedUrl(): URL {
-    let fakedUrl = new URL(window.location.href);
+function intoFakeUrl(realUrl: string | URL): URL { // FIXME: This only works when the realURL is on the active target
+    let fakedUrl = typeof realUrl === "string" ? new URL(realUrl) : new URL(realUrl.toString());
     fakedUrl.protocol = currentProtocol;
     fakedUrl.host = currentHost;
     fakedUrl.port = currentPort;
     return fakedUrl;
+}
+
+function fromFakeUrl(fakedUrl: string | URL): URL {
+    let realUrl = typeof fakedUrl === "string" ? new URL(fakedUrl) : new URL(fakedUrl.toString());
+    realUrl.protocol = window.location.protocol;
+    realUrl.hostname = window.location.hostname;
+    realUrl.port = window.location.port; // TODO: verify it works when port is empty
+    return realUrl;
+}
+
+function getFakedUrl(): URL {
+    return intoFakeUrl(window.location.href);
 }
 
 async function setFakedUrl(target: URL) {
@@ -66,10 +79,7 @@ async function setFakedUrl(target: URL) {
 
     await waitResponse;
     
-    target.protocol = window.location.protocol;
-    target.hostname = window.location.hostname;
-    target.port = window.location.port;
-    window.location.href = target.toString();
+    window.location.href = fromFakeUrl(target).href;
 }
 
 function getAllPropertyNames(obj): Set<string> {
@@ -84,7 +94,44 @@ function getAllPropertyNames(obj): Set<string> {
     return props;
 }
 
-// The location proxy
+// HTMLIframeElement redefinitions
+
+const originalSrcDescriptor = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, "src");
+
+Object.defineProperty(HTMLIFrameElement.prototype, "src", {
+    set(value) {
+        let realUrl = fromFakeUrl(value).href;
+        // console.warn(`Setting src to ${value} (${realUrl})`);
+
+        if (originalSrcDescriptor && originalSrcDescriptor.set) {
+            originalSrcDescriptor.set.call(this, realUrl);
+        } else {
+            this.setAttribute("src", realUrl);
+        }
+    },
+    get() {
+        let value = originalSrcDescriptor && originalSrcDescriptor.get ? originalSrcDescriptor.get.call(this) : this.getAttribute("src");
+        let fakeUrl = intoFakeUrl(value).href;
+        // console.warn(`Getting src: ${value} (${fakeUrl})`);
+
+        return fakeUrl;
+    },
+    configurable: true,
+    enumerable: true,
+});
+
+// Worker redefinitions
+
+const OriginalWorker = Worker;
+
+(window as any).Worker = function (scriptURL: string | URL, options?: WorkerOptions): Worker {
+    const realUrl = fromFakeUrl(scriptURL.toString()).href;
+    console.warn(`Creating Worker with scriptURL: ${scriptURL} (rewritten to ${realUrl})`);
+
+    return new OriginalWorker(realUrl, options);
+} as any as typeof Worker;
+
+// Location proxy
 
 const LOCATION_WHITELISTED: Set<string> = new Set(["hash", "pathname", "search", "reload", "toString"]);
 
@@ -94,7 +141,7 @@ const locationHandler = {
     get(targetLocation, prop, receiver) {
         if (LOCATION_WHITELISTED.has(prop)) {
             const value = Reflect.get(targetLocation, prop);
-            if (typeof value === 'function' && locationInitialMethods.has(prop)) {
+            if (typeof value === "function" && locationInitialMethods.has(prop)) {
                 return value.bind(targetLocation);
             }
             return value;
@@ -143,7 +190,7 @@ const locationHandler = {
 
     set(targetLocation, prop, value, receiver): boolean {
         if (LOCATION_WHITELISTED.has(prop)) {
-            if (typeof value === 'function' && locationInitialMethods.has(prop)) {
+            if (typeof value === "function" && locationInitialMethods.has(prop)) {
                 return Reflect.set(targetLocation, prop, value.bind(targetLocation));
             }
             return Reflect.set(targetLocation, prop, value);
@@ -234,7 +281,7 @@ const documentHandler = {
         }
 
         const value = Reflect.get(targetDocument, prop);
-        if (typeof value === 'function' && documentInitialMethods.has(prop)) {
+        if (typeof value === "function" && documentInitialMethods.has(prop)) {
             return value.bind(targetDocument);
         }
         return value;
@@ -257,7 +304,7 @@ const documentHandler = {
             console.warn(prop + " (set) is not implemented: page might detect the proxy");
         }
 
-        if (typeof value === 'function' && documentInitialMethods.has(prop)) {
+        if (typeof value === "function" && documentInitialMethods.has(prop)) {
             return Reflect.set(targetDocument, prop, value.bind(targetDocument));
         }
         return Reflect.set(targetDocument, prop, value);
@@ -277,12 +324,12 @@ const windowHandler = {
         if (prop === "location") {
             return proxiedLocation;
         }
-        if (prop === "postMessage" || prop === "parent") {
+        if (prop === "postMessage" || prop === "parent" || prop == "top" || prop === "cookieStore") {
             console.warn(prop + " (get) is not implemented: page might detect the proxy");
         }
 
         const value = Reflect.get(targetWindow, prop);
-        if (typeof value === 'function' && windowInitialMethods.has(prop)) {
+        if (typeof value === "function" && windowInitialMethods.has(prop)) {
             return value.bind(targetWindow);
         }
         return value;
@@ -293,11 +340,11 @@ const windowHandler = {
             setFakedUrl(value);
             return true;
         }
-        if (prop === "postMessage" || prop === "parent") {
+        if (prop === "postMessage" || prop === "parent" || prop == "top" || prop === "cookieStore") {
             console.warn(prop + " (set) is not implemented: page might detect the proxy");
         }
 
-        if (typeof value === 'function' && windowInitialMethods.has(prop)) {
+        if (typeof value === "function" && windowInitialMethods.has(prop)) {
             return Reflect.set(targetWindow, prop, value.bind(targetWindow));
         }
         return Reflect.set(targetWindow, prop, value);
