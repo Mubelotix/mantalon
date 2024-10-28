@@ -220,7 +220,7 @@ self.addEventListener("message", event => {
             event.source?.postMessage({ type: "mantalon-init-waiting" });
         }
     } else if (event.data.type === "mantalon-change-origin") {
-        clientOrigins.set(event.data.clientId, event.data.origin);
+        clientOrigins.set(event.data.clientId, event.data.origin); // FIXME: This message was removed
         event.source?.postMessage({type: "mantalon-change-origin-success"});
     } else if (event.data.type === "mantalon-update-sw-cookie") {
         updateCookieFromClient(new URL(event.data.href), event.data.cookie);
