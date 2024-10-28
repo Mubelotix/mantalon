@@ -3,7 +3,7 @@ declare let self: ServiceWorkerGlobalScope;
 import { Cookie } from "tough-cookie";
 import { clientOrigins, cookieJar } from "./sw";
 
-async function sendCookiesToClient(url: URL) {
+export async function sendCookiesToClient(url: URL) {
     const matchingCookies = await cookieJar.getCookies(url.href);
     const cookieString = matchingCookies.map(cookie => `${cookie.key}=${cookie.value}`).join(';');
     self.clients.matchAll().then(clients => {
@@ -15,7 +15,7 @@ async function sendCookiesToClient(url: URL) {
     });
 }
 
-async function updateCookieFromClient(url: URL, cookie: string) {
+export async function updateCookieFromClient(url: URL, cookie: string) {
     let resCookie = Cookie.parse(cookie);
     if (!resCookie) {
         console.error("Failed to parse cookie from client");

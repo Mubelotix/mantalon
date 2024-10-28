@@ -8,6 +8,7 @@ import { Cookie, CookieJar } from "tough-cookie";
 import { applyJsProxy } from "./js-proxy";
 import { addDefaultHeaders, applyHeaderChanges } from "./headers";
 import { applySubstitutions } from "./substitutions";
+import { sendCookiesToClient, updateCookieFromClient } from "./cookies";
 
 type ProxiedFetchType = (arg1: any, arg2?: any) => Promise<Response>;
 
@@ -251,11 +252,3 @@ try {
     initError = e;
     console.error("Failed to load Mantalon", e);
 }
-function sendCookiesToClient(url: URL) {
-    throw new Error("Function not implemented.");
-}
-
-function updateCookieFromClient(arg0: URL, cookie: any) {
-    throw new Error("Function not implemented.");
-}
-
