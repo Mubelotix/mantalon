@@ -1,7 +1,7 @@
 import esbuild from "esbuild";
 
 esbuild.build({
-  entryPoints: ["./src/js-proxy.ts"],
+  entryPoints: ["./js-proxy/main.ts"],
   bundle: true,
   outfile: "./js-proxy-bundle.js",
   format: "iife",
