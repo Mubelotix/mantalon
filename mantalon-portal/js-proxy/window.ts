@@ -1,7 +1,10 @@
+import { makeProxiedDocument } from "./document";
+import { makeProxiedLocation } from "./location";
 import { getAllPropertyNames } from "./main";
 
 export function makeProxiedWindow(
     realWindow: Window,
+    targetOrigins: Set<string>,
     proxiedDocument,
     proxiedLocation,
 ) {
@@ -18,6 +21,23 @@ export function makeProxiedWindow(
             }
             if (prop === "window") {
                 return proxiedWindow;
+            }
+            if (prop === "parent") {
+                let realParentWindow = realWindow.parent.window;
+                if (
+                    typeof realParentWindow === 'object'
+                    && realParentWindow !== null
+                    && typeof realParentWindow.window === 'object'
+                    && realParentWindow.window === realParentWindow
+                ) {
+                    let realParentLocation = realParentWindow.location;
+                    let realParentDocument = realParentWindow.document;
+                    let fakeParentLocation = makeProxiedLocation(realParentLocation, proxiedLocation.origin, proxiedLocation.hostname, proxiedLocation.origin, proxiedLocation.protocol, proxiedLocation.port, targetOrigins); // FIXME: This is not correct, you could very well expect the parent to be in a different origin
+                    let fakeParentDocument = makeProxiedDocument(realParentDocument, proxiedDocument.cookie, fakeParentLocation);
+                    return makeProxiedWindow(realParentWindow, targetOrigins, fakeParentDocument, fakeParentLocation);
+                } else {
+                    console.error(`Parent window is not an instance of Window: ${realParentWindow}`);
+                }
             }
             if (prop === "postMessage" || prop === "parent" || prop == "top" || prop === "cookieStore") {
                 console.warn(prop + " (get) is not implemented: page might detect the proxy");
