@@ -31,6 +31,12 @@ function applyJsProxyOnJs(input: string): string {
             if (path.node.name === "window") {
                 path.replace(recast.types.builders.identifier("proxiedWindow"));
                 return false;
+            } else if (path.node.name === "document") {
+                path.replace(recast.types.builders.identifier("proxiedDocument"));
+                return false;
+            } else if (path.node.name === "location") {
+                path.replace(recast.types.builders.identifier("proxiedLocation"));
+                return false;
             }
 
             this.traverse(path);

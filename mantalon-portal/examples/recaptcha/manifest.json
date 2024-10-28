@@ -7,7 +7,7 @@
             "substitutions": [
                 {
                     "pattern": "sha384-me+fKkpx+LDPr+jjTccMyZRS5BoP+JLiYHKscp4bUxp+j6TnL/qxiwcgzpRCCrlc",
-                    "replacement": "sha384-dfjssxqoKEJZrNUenwPrjfxtZFZFuI3LHC7hxzp5TKl91+/iBa3TDnHJZVEb6pOZ",
+                    "replacement": "sha384-Zbjp2JH3IbpU/E0cYuVgWhRnY7V3tMn0m/R6T1c+ZKUYhDPW3iHE3Vy5T98HEsHh",
                     "once": false
                 }
             ]
