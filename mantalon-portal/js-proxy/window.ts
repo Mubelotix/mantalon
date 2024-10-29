@@ -79,6 +79,10 @@ export function setupWindowPostMessage(window) {
     const realLocation = window.location;
     
     window.postMessage = function (message, fakeTargetOrigin, transfer) {
+        if (fakeTargetOrigin === "*") {
+            return window.realPostMessage(message, fakeTargetOrigin, transfer);
+        }
+
         let realTargetOrigin = fromFakeUrl(fakeTargetOrigin, realLocation.protocol, realLocation.hostname, realLocation.port).origin;
         console.log(`postMessage: ${message} to ${fakeTargetOrigin} (${realTargetOrigin})`);
 
