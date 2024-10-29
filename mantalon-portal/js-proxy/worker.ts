@@ -50,7 +50,7 @@ export function makeProxiedDedicatedWorker(realWorker, fakeLocation) {
             }
     
             const value = Reflect.get(realWorker, prop);
-            if (typeof value === "function" && workerInitialMethods.has(prop)) {
+            if (typeof value === "function" && workerInitialMethods.has(prop) && prop[0] !== prop[0].toUpperCase()) {
                 return value.bind(realWorker);
             }
             return value;
@@ -61,7 +61,7 @@ export function makeProxiedDedicatedWorker(realWorker, fakeLocation) {
                 console.warn(prop + " (set) is not implemented: page might detect the proxy");
             }
     
-            if (typeof value === "function" && workerInitialMethods.has(prop)) {
+            if (typeof value === "function" && workerInitialMethods.has(prop) && prop[0] !== prop[0].toUpperCase()) {
                 return Reflect.set(realWorker, prop, value.bind(realWorker));
             }
             return Reflect.set(realWorker, prop, value);

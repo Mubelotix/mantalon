@@ -73,7 +73,7 @@ export function makeProxiedWindow(
             }
     
             const value = Reflect.get(realWindow, prop);
-            if (typeof value === "function" && windowInitialMethods.has(prop)) {
+            if (typeof value === "function" && windowInitialMethods.has(prop) && prop[0] !== prop[0].toUpperCase()) {
                 return value.bind(realWindow);
             }
             return value;
@@ -88,7 +88,7 @@ export function makeProxiedWindow(
                 console.warn(prop + " (set) is not implemented: page might detect the proxy");
             }
     
-            if (typeof value === "function" && windowInitialMethods.has(prop)) {
+            if (typeof value === "function" && windowInitialMethods.has(prop) && prop[0] !== prop[0].toUpperCase()) {
                 return Reflect.set(realWindow, prop, value.bind(realWindow));
             }
             return Reflect.set(realWindow, prop, value);

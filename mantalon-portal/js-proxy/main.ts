@@ -75,6 +75,9 @@ if (typeof window !== "undefined" && globalThis instanceof window.Window) {
     globalThis.proxiedWindow = proxiedWindow;
     globalThis.proxiedSelf = proxiedWindow;
     globalThis.proxiedGlobalThis = proxiedWindow;
+    
+    globalThis = proxiedWindow;
+    self = proxiedWindow;
 } else if (globalThis instanceof DedicatedWorkerGlobalScope) {
     setupWorkers();
     
@@ -95,6 +98,9 @@ if (typeof window !== "undefined" && globalThis instanceof window.Window) {
     globalThis.proxiedLocation = proxiedLocation;
     globalThis.proxiedSelf = proxiedDedicatedWorker;
     globalThis.proxiedGlobalThis = proxiedDedicatedWorker;
+
+    globalThis = proxiedDedicatedWorker;
+    self = proxiedDedicatedWorker;
 } else {
     console.error(`Unsupported environment: ${self}`);
 }

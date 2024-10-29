@@ -70,6 +70,8 @@ export function makeProxiedLocation(
                     };
             }
 
+            console.error(`Location property ${prop} is not implemented`);
+
             return undefined;
         },
 
@@ -130,6 +132,8 @@ export function makeProxiedLocation(
                     }
                     return Reflect.set(realLocation, "protocol", fakeProtocol);
             }
+
+            console.error(`Location property ${prop} is not implemented (set)`);
 
             return false
         }
