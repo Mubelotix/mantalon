@@ -4,9 +4,9 @@
 import { makeProxiedDocument } from "./document";
 import { setupIframes } from "./simple/iframe";
 import { fromFakeUrl, intoFakeUrl, makeProxiedLocation } from "./location";
-import { makeProxiedWindow } from "./window";
+import { makeProxiedWindow, setupWindowPostMessage } from "./window";
 import { setupWorkers } from "./simple/worker";
-import { makeProxiedDedicatedWorker } from "./worker";
+import { makeProxiedDedicatedWorker, setupWorkerPostMessage } from "./worker";
 
 const currentOrigin = "init-origin"; // Value is added automatically when the script gets injected
 const targetOrigins = new Set(["init-targetOrigins"]); // Value is added automatically when the script gets injected
@@ -48,6 +48,7 @@ if (typeof window !== "undefined" && globalThis instanceof window.Window) {
     });
     
     setupIframes(fakeOrigin);
+    setupWindowPostMessage(window);
     setupWorkers();
     
     const proxiedLocation = makeProxiedLocation(
@@ -82,6 +83,7 @@ if (typeof window !== "undefined" && globalThis instanceof window.Window) {
     self = proxiedWindow;
 } else if (globalThis instanceof DedicatedWorkerGlobalScope) {
     setupWorkers();
+    setupWorkerPostMessage(self);
     
     const proxiedLocation = makeProxiedLocation(
         location,

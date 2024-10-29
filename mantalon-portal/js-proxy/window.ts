@@ -41,33 +41,6 @@ export function makeProxiedWindow(
                     console.error(`Parent window is not an instance of Window: ${realParentWindow}`);
                 }
             }
-            if (prop === "postMessage") {
-                return function (message, fakeTargetOrigin, transfer) {
-                    let realTargetOrigin = fromFakeUrl(fakeTargetOrigin, realLocation.protocol, realLocation.hostname, realLocation.port).origin;
-                    console.log(`postMessage: ${message} to ${fakeTargetOrigin} (${realTargetOrigin})`);
-                    return realWindow.postMessage({
-                        actualMessage: message,
-                        fakeOrigin: fakeLocation.origin,
-                    }, realTargetOrigin, transfer);
-                };
-            }
-            if (prop === "addEventListener") {
-                return function (type, listener, options) {
-                    if (type === "message") {
-                        let listenerWrapper = function (event: MessageEvent) {
-                            if (event.origin === realLocation.origin) {
-                                let actualMessage = event.data.actualMessage;
-                                let fakeOrigin = event.data.fakeOrigin;
-                                return listener(makeProxiedMessageEvent(event, actualMessage, fakeOrigin));
-                            }
-                            return listener(event);
-                        }
-                        return realWindow.addEventListener(type, listenerWrapper, options);
-                    } else {
-                        return realWindow.addEventListener(type, listener, options);
-                    }
-                };
-            }
             if (prop === "cookieStore" || prop === "onmessage" || prop === "onmessageerror" || prop === "removeEventListener") {
                 console.warn(prop + " (get) is not implemented: page might detect the proxy");
             }
@@ -97,4 +70,40 @@ export function makeProxiedWindow(
     
     fakeWindow = new Proxy(realWindow, windowHandler);
     return fakeWindow;
+}
+
+
+export function setupWindowPostMessage(window) {
+    window.realPostMessage = window.postMessage;
+    window.realAddEventListener = window.addEventListener;
+    const realLocation = window.location;
+    
+    window.postMessage = function (message, fakeTargetOrigin, transfer) {
+        let realTargetOrigin = fromFakeUrl(fakeTargetOrigin, realLocation.protocol, realLocation.hostname, realLocation.port).origin;
+        console.log(`postMessage: ${message} to ${fakeTargetOrigin} (${realTargetOrigin})`);
+
+        return window.realPostMessage({
+            actualMessage: message,
+            fakeOrigin: fakeTargetOrigin,
+        }, realTargetOrigin, transfer);
+    };
+
+    window.addEventListener = function (type, listener, options) {
+        if (type === "message") {
+            let listenerWrapper = function (event: MessageEvent) {
+                if (event.origin === realLocation.origin) {
+                    let actualMessage = event.data.actualMessage;
+                    let fakeOrigin = event.data.fakeOrigin;
+                    console.log(`Received message from ${fakeOrigin}: ${actualMessage}`);
+                    return listener(makeProxiedMessageEvent(event, actualMessage, fakeOrigin));
+                } else {
+                    console.warn(`Message from unexpected origin: ${event.origin}`);
+                }
+                return listener(event);
+            }
+            return window.realAddEventListener(type, listenerWrapper, options);
+        } else {
+            return window.realAddEventListener(type, listener, options);
+        }
+    };;
 }

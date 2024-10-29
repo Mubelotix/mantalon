@@ -1,4 +1,5 @@
 import { getAllPropertyNames } from "./main";
+import { makeProxiedMessageEvent } from "./message";
 
 export function makeProxiedDedicatedWorker(realWorker, fakeLocation) {
     const workerInitialMethods = getAllPropertyNames(realWorker);
@@ -71,4 +72,28 @@ export function makeProxiedDedicatedWorker(realWorker, fakeLocation) {
     fakeWorker = new Proxy(realWorker, workerHandler);
     return fakeWorker;
 
+}
+
+export function setupWorkerPostMessage(worker) {
+    worker.realAddEventListener = worker.addEventListener;
+    const realLocation = worker.location;
+
+    worker.addEventListener = function (type, listener, options) {
+        if (type === "message") {
+            let listenerWrapper = function (event: MessageEvent) {
+                if (event.origin === realLocation.origin) {
+                    let actualMessage = event.data.actualMessage;
+                    let fakeOrigin = event.data.fakeOrigin;
+                    console.log(`Worker received message from ${fakeOrigin}: ${actualMessage}`);
+                    return listener(makeProxiedMessageEvent(event, actualMessage, fakeOrigin));
+                } else {
+                    console.warn(`Message from unexpected origin: ${event.origin}`);
+                }
+                return listener(event);
+            }
+            return worker.realAddEventListener(type, listenerWrapper, options);
+        } else {
+            return worker.realAddEventListener(type, listener, options);
+        }
+    };;
 }
