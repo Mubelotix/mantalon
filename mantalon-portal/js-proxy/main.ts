@@ -16,6 +16,8 @@ const currentHostname = currentOrigin.split("://")[1].split(":")[0];
 const currentPort = currentOrigin.split("://")[1].split(":")[1] || "443"; // FIXME: Handle http port
 const currentProtocol = currentOrigin.split("/")[0];
 
+const fakeOrigin = new URL(currentOrigin);
+
 export function getAllPropertyNames(obj): Set<string> {
     const props: Set<string> = new Set();
     let current = obj;
@@ -45,7 +47,7 @@ if (typeof window !== "undefined" && globalThis instanceof window.Window) {
         }
     });
     
-    setupIframes(currentProtocol, currentHost, currentPort);
+    setupIframes(fakeOrigin);
     setupWorkers();
     
     const proxiedLocation = makeProxiedLocation(
