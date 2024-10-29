@@ -25,3 +25,5 @@ export function setupIframes(fakeProtocol: string, fakeHost: string, fakePort: s
         enumerable: true,
     });
 }
+
+// TODO: contentWindow

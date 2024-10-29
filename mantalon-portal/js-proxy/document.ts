@@ -30,12 +30,7 @@ export function makeProxiedDocument(
             }
             if (prop === "defaultView") {
                 console.warn("defaultView is badly implemented. Returning the global");
-                return makeProxiedWindow(
-                    window,
-                    targetOrigins,
-                    receiver,
-                    fakeLocation
-                )
+                return globalThis;
             }
 
             const value = Reflect.get(realDocument, prop);
