@@ -89,8 +89,8 @@ async function proxy(event: FetchEvent): Promise<Response> {
 
     // Find the proxy config for the URL
     let proxy_config = manifest.proxy_urls?.find((conf) => conf.test(url, ""));
-    if (!proxy_config) {
-        console.log("No proxy config found for ", url);
+    if (proxy_config && !proxy_config.enabled) {
+        console.log("Proxy disabled for URL", url.toString());
         return await fetch(event.request);
     }
 

@@ -63,8 +63,11 @@ export enum RequestDirection {
 }
 
 export class ProxyConfig extends UrlMatcher {
+    /// Whether the proxy is enabled. Defaults to true.
+    enabled: boolean;
+
     /// Whether to rewrite location headers. Defaults to true.
-    rewrite_location?: boolean;
+    rewrite_location: boolean;
 
     constructor(data: any) {
         super(data);
@@ -72,7 +75,13 @@ export class ProxyConfig extends UrlMatcher {
         if (data.rewrite_location && typeof data.rewrite_location !== "boolean") {
             throw new Error("ProxyConfig.rewrite_location must be a boolean");
         }
-        this.rewrite_location = data.rewrite_location;
+
+        if (data.enabled && typeof data.enabled !== "boolean") {
+            throw new Error("ProxyConfig.enabled must be a boolean");
+        }
+
+        this.rewrite_location = data.rewrite_location ?? true;
+        this.enabled = data.enabled ?? true;
     }
 }
 
@@ -433,14 +442,12 @@ export class Manifest {
         }
 
         // Validate and set optional proxy_urls
+        this.proxy_urls = [];
         if (data.proxy_urls) {
             if (!Array.isArray(data.proxy_urls)) {
                 throw new Error("Manifest.proxy_urls must be an array");
             }
             this.proxy_urls = data.proxy_urls.map(proxy => new ProxyConfig(proxy));
-        }
-        if (!this.proxy_urls || this.proxy_urls.length === 0) {
-            this.proxy_urls = [new ProxyConfig({ matches: ["*://*"] })];
         }
 
         // Validate and set optional content_scripts
