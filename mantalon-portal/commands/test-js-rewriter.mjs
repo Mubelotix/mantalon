@@ -27,7 +27,7 @@ const testCases = [
         `,
         expected: `
         if (mantalon(mantalon(mantalon(window).location).href) !== "https://example.com") {
-            mantalon(mantalon(mantalon(window).location).replace)("https://example.com");
+            mantalon(mantalon(mantalon(window).location).replace).call(mantalon(mantalon(window).location), "https://example.com");
         }`,
     },
     {
@@ -37,7 +37,7 @@ const testCases = [
         window.document.body.style.color = "red";
         `,
         expected: `
-        mantalon(mantalon(console).log)(mantalon(
+        mantalon(mantalon(console).log).call(mantalon(console), mantalon(
                 mantalon(mantalon(mantalon(mantalon(window).document).body).style).backgroundColor
         ));
         mantalon(mantalon(mantalon(mantalon(mantalon(window).document).body).style).color) = "red";
@@ -50,8 +50,10 @@ const testCases = [
         document.querySelector("#app").innerHTML = "Test";
         `,
         expected: `
-        mantalon(mantalon(window).alert)("Hello, world!");
-        mantalon(mantalon(mantalon(mantalon(document).querySelector)("#app")).innerHTML) = "Test";
+        mantalon(mantalon(window).alert).call(mantalon(window), "Hello, world!");
+        mantalon(
+                mantalon(mantalon(document).querySelector).call(mantalon(document), "#app").innerHTML
+        ) = "Test";
         `,
     },
     {
@@ -87,11 +89,11 @@ const testCases = [
         `,
         expected: `
         const update = (doc) => {
-            mantalon(mantalon(console).log)(mantalon(mantalon(doc).body));
+            mantalon(mantalon(console).log).call(mantalon(console), mantalon(mantalon(doc).body));
         };
 
         function logWindow(win) {
-            mantalon(mantalon(console).log)(mantalon(mantalon(win).location));
+            mantalon(mantalon(console).log).call(mantalon(console), mantalon(mantalon(win).location));
         }
         `,
     },
@@ -123,7 +125,7 @@ const testCases = [
         window.location.assign("https://another.com");    
         `,
         expected: `
-        mantalon(mantalon(mantalon(window).location).assign)("https://another.com"); 
+        mantalon(mantalon(mantalon(window).location).assign).call(mantalon(mantalon(window).location), "https://another.com");    
         `,
     },
     {
@@ -156,7 +158,7 @@ const testCases = [
         document.body.appendChild(document.createElement("div"));    
         `,
         expected: `
-        mantalon(mantalon(mantalon(document).body).appendChild)(mantalon(mantalon(document).createElement)("div")); 
+        mantalon(mantalon(mantalon(document).body).appendChild).call(mantalon(mantalon(document).body), mantalon(mantalon(document).createElement).call(mantalon(document), "div"));    
         `,
     },
     {

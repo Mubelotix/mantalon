@@ -1,9 +1,9 @@
 // @ts-ignore: TS2580
 const recast = require("recast");
 import * as types from "ast-types";
-import { NodePath } from "ast-types/lib/node-path";
+import { namedTypes as n, builders as b } from "ast-types";
 
-function isBindingIdentifier(path: NodePath<types.namedTypes.Identifier>) {
+function isBindingIdentifier(path: any) {
     let node = path.node;
     let parentPath = path.parentPath;
 
@@ -36,63 +36,133 @@ function isBindingIdentifier(path: NodePath<types.namedTypes.Identifier>) {
     return false;
 }
 
-export function applyJsProxyOnJs(input: string): string {
-    const b = recast.types.builders;
-    const ast = recast.parse(input);
+function wrap(node: any) {
+    if (node._wrapped) return node;
+    const wrapped = b.callExpression(b.identifier("mantalon"), [node]);
+    (wrapped as any)._wrapped = true;
+    return wrapped;
+}
 
-    function wrap(node: any) {
-        return b.callExpression(b.identifier("mantalon"), [node]);
+function rewriteCalls(node: any, parent?: any): any {
+    if (!node || typeof node !== "object") return node;
+
+    switch (node.type) {
+        case "CallExpression":
+            if (node.callee.type === "MemberExpression") {
+                // Transform obj.method(args) → obj.method.call(obj, ...args)
+                const objectTransformed = rewriteCalls(node.callee.object, node);
+                node.arguments.map((child: any) => rewriteCalls(child, node));
+                node.arguments.unshift(objectTransformed);
+                node.callee = b.memberExpression(
+                    rewriteCalls(node.callee, node),
+                    b.identifier("call"),
+                    false
+                );
+                return node;
+            } else {
+                node.callee = rewriteCalls(node.callee, node);
+                node.arguments = node.arguments.map((arg: any) => rewriteCalls(arg, node));
+                return node;
+            }
+
+        case "MemberExpression":
+            node.object = rewriteCalls(node.object, node);
+            node.property = rewriteCalls(node.property, node);
+            return node;
+
+        default:
+            // recurse through all child nodes
+            for (const key of Object.keys(node)) {
+                if (Array.isArray(node[key])) {
+                    node[key] = node[key].map((child: any) => rewriteCalls(child, node));
+                } else if (node[key] && typeof node[key] === "object" && node[key].type) {
+                    node[key] = rewriteCalls(node[key], node);
+                }
+            }
+            return node;
     }
+}
 
-    recast.types.visit(ast, {
-        visitMemberExpression(path: NodePath<types.namedTypes.MemberExpression>) {
-            this.traverse(path);
+function wrapExpressions(node: any, parent?: any): any {
+    if (!node || typeof node !== "object") return node;
 
-            const node = path.node;
-            const obj = node.object.type === "CallExpression"
-                && node.object.callee.type === "Identifier"
-                && node.object.callee.name === "mantalon"
-                ? node.object
-                : wrap(node.object);
-
-            path.replace(wrap(b.memberExpression(obj, node.property, node.computed)));
-            return false;
-        },
-
-
-        visitCallExpression(path: NodePath<types.namedTypes.CallExpression>) {
-            this.traverse(path);
-
-            const node = path.node;
-
-            // wrap callee if not already wrapped
+    switch (node.type) {
+        case "Identifier":
             if (
-                node.callee.type !== "CallExpression" ||
-                !(
-                    node.callee.callee.type === "Identifier" &&
-                    node.callee.callee.name === "mantalon"
-                )
+                parent &&
+                ((parent.type === "MemberExpression" && parent.property === node && !parent.computed) ||
+                    isBindingIdentifier({ node, parentPath: parent._path }))
             ) {
-                node.callee = wrap(node.callee);
+                return node;
             }
+            return wrap(node);
+        
+        case "Property":
+        case "Keyword":
+        case "Punctuator":
+            return node;
 
-            return false;
-        },
+        case "CallExpression":
+            node.callee = wrapExpressions(node.callee, node);
+            node.object = wrapExpressions(node.object, node);
+            node.arguments = node.arguments.map((child: any) => wrapExpressions(child, node));
+            return node;
 
-        visitIdentifier(path: NodePath<types.namedTypes.Identifier>) {
-            const parent = path.parent.node;
+        case "VariableDeclaration":
+            node.declarations = node.declarations.map((child: any) => wrapExpressions(child, node));
+            return node;
 
-            // Skip identifiers that are keys in member expressions (non-computed)
-            if (parent.type === "MemberExpression" && parent.property === path.node && !parent.computed) {
-                return false;
+        case "VariableDeclarator":
+            node.init = wrapExpressions(node.init, node);
+            return node;
+
+        case "ArrowFunctionExpression":
+        case "FunctionDeclaration":
+            node.body = wrapExpressions(node.body, node);
+            return node;
+        
+        case "Module":
+        case "Program":
+        case "BlockStatement":
+            node.body = node.body.map((child: any) => wrapExpressions(child, node));
+            return node;
+        
+        case "ExpressionStatement":
+            node.expression = wrapExpressions(node.expression, node);
+            return node;
+
+        case "MemberExpression":
+            node.object = wrapExpressions(node.object, node);
+            node.property = node.computed ? wrapExpressions(node.property, node) : node.property;
+
+            if (!parent || (parent.type !== "CallExpression" || parent.callee !== node)) {
+                return wrap(node);
             }
+            return node;
 
-            if (isBindingIdentifier(path)) return false;
+        default:
+            // console.log("unsupported", node);
 
-            path.replace(wrap(path.node));
-            return false;
-        }
-    });
+            for (const key of Object.keys(node)) {
+                if (Array.isArray(node[key])) {
+                    node[key] = node[key].map((child: any) => wrapExpressions(child, node));
+                } else if (node[key] && typeof node[key] === "object" && node[key].type) {
+                    node[key] = wrapExpressions(node[key], node);
+                }
+            }
+            return node;
+    }
+}
+
+
+export function applyJsProxyOnJs(input: string): string {
+    let ast = recast.parse(input);
+    rewriteCalls(ast);
+    let restringified = recast.print(ast).code;
+    
+    ast = recast.parse(restringified);
+    wrapExpressions(ast);
+
 
     return recast.print(ast).code;
 }
