@@ -7,6 +7,7 @@ import { fromFakeUrl, intoFakeUrl, makeProxiedLocation } from "./location";
 import { makeProxiedWindow, setupWindowPostMessage } from "./window";
 import { setupWorkers } from "./simple/worker";
 import { makeProxiedDedicatedWorker, setupWorkerPostMessage } from "./worker";
+import { setupScripts } from "./simple/script";
 
 const currentOrigin = "init-origin"; // Value is added automatically when the script gets injected
 const targetOrigins = new Set(["init-targetOrigins"]); // Value is added automatically when the script gets injected
@@ -48,6 +49,7 @@ if (typeof window !== "undefined" && globalThis instanceof window.Window) {
     });
     
     setupIframes(fakeOrigin);
+    setupScripts();
     setupWindowPostMessage(window);
     setupWorkers();
     
