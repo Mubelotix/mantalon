@@ -40,7 +40,7 @@ const testCases = [
         mantalon(mantalon(console).log).call(mantalon(console), mantalon(
                 mantalon(mantalon(mantalon(mantalon(window).document).body).style).backgroundColor
         ));
-        mantalon(mantalon(mantalon(mantalon(mantalon(window).document).body).style).color) = "red";
+        mantalon(mantalon(mantalon(mantalon(window).document).body).style).color = "red";
         `,
     },
     {
@@ -51,9 +51,7 @@ const testCases = [
         `,
         expected: `
         mantalon(mantalon(window).alert).call(mantalon(window), "Hello, world!");
-        mantalon(
-                mantalon(mantalon(document).querySelector).call(mantalon(document), "#app").innerHTML
-        ) = "Test";
+        mantalon(mantalon(document).querySelector).call(mantalon(document), "#app").innerHTML = "Test";
         `,
     },
     {
@@ -63,8 +61,8 @@ const testCases = [
         location.hash = "#section1";
         `,
         expected: `
-        mantalon(mantalon(mantalon(window).document).title) = "My Page";
-        mantalon(mantalon(location).hash) = "#section1";
+        mantalon(mantalon(window).document).title = "My Page";
+        mantalon(location).hash = "#section1";
         `,
     },
     {
@@ -116,7 +114,7 @@ const testCases = [
         `,
         expected: `
         const key = "href";
-        mantalon(mantalon(mantalon(window).location)[mantalon(key)]) = "https://changed.com";
+        mantalon(mantalon(window).location)[key] = "https://changed.com";
         `,
     },
     {
@@ -136,7 +134,7 @@ const testCases = [
         `,
         expected: `
         const styleKey = "color";
-        mantalon(mantalon(mantalon(mantalon(document).body).style)[mantalon(styleKey)]) = "blue";
+        mantalon(mantalon(mantalon(document).body).style)[styleKey] = "blue";
         `,
     },
     {
@@ -146,10 +144,8 @@ const testCases = [
         window.document["body"].style.backgroundColor = "green";    
         `,
         expected: `
-        mantalon(mantalon(mantalon(window)["document"]).title) = "Title via bracket";
-        mantalon(
-                mantalon(mantalon(mantalon(mantalon(window).document)["body"]).style).backgroundColor
-        ) = "green";
+        mantalon(mantalon(window)["document"]).title = "Title via bracket";
+        mantalon(mantalon(mantalon(mantalon(window).document)["body"]).style).backgroundColor = "green";
         `,
     },
     {
@@ -169,7 +165,7 @@ const testCases = [
         }`,
         expected: `
         if (mantalon(mantalon(mantalon(window).location).protocol) === "http:" && mantalon(mantalon(mantalon(window).location).hostname) !== "example.com") {
-            mantalon(mantalon(mantalon(window).location).href) = "https://example.com" + mantalon(mantalon(mantalon(window).location).pathname) + mantalon(mantalon(mantalon(window).location).search) + mantalon(mantalon(mantalon(window).location).hash);
+            mantalon(mantalon(window).location).href = "https://example.com" + mantalon(mantalon(mantalon(window).location).pathname) + mantalon(mantalon(mantalon(window).location).search) + mantalon(mantalon(mantalon(window).location).hash);
         }
         `,
     },

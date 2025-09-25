@@ -1,45 +1,9 @@
 // @ts-ignore: TS2580
 const recast = require("recast");
-import * as types from "ast-types";
 import { namedTypes as n, builders as b } from "ast-types";
 
-function isBindingIdentifier(path: any) {
-    let node = path.node;
-    let parentPath = path.parentPath;
-
-    while (parentPath) {
-        const parent = parentPath.node;
-
-        if (!parent) break;
-
-        if (
-            // variable declaration
-            (parent.type === "VariableDeclarator" && parent.id === node) ||
-            // function name
-            (parent.type === "FunctionDeclaration" && parent.id === node) ||
-            // function parameters
-            ((parent.type === "FunctionDeclaration" || parent.type === "FunctionExpression" || parent.type === "ArrowFunctionExpression") && parent.params.includes(node)) ||
-            // object destructuring property key or value
-            (parent.type === "Property" &&
-             ((parent.key === node && !parent.computed) ||
-              (parent.value === node && parentPath.parent?.node?.type === "ObjectPattern"))) ||
-            // array pattern
-            parent.type === "ArrayPattern"
-        ) {
-            return true;
-        }
-
-        node = parent;
-        parentPath = parentPath.parentPath;
-    }
-
-    return false;
-}
-
 function wrap(node: any) {
-    if (node._wrapped) return node;
     const wrapped = b.callExpression(b.identifier("mantalon"), [node]);
-    (wrapped as any)._wrapped = true;
     return wrapped;
 }
 
@@ -88,13 +52,6 @@ function wrapExpressions(node: any, parent?: any): any {
 
     switch (node.type) {
         case "Identifier":
-            if (
-                parent &&
-                ((parent.type === "MemberExpression" && parent.property === node && !parent.computed) ||
-                    isBindingIdentifier({ node, parentPath: parent._path }))
-            ) {
-                return node;
-            }
             return wrap(node);
         
         case "Property":
@@ -144,10 +101,12 @@ function wrapExpressions(node: any, parent?: any): any {
             node.object = wrapExpressions(node.object, node);
             node.property = node.computed ? wrapExpressions(node.property, node) : node.property;
 
-            if (!parent || (parent.type !== "CallExpression" || parent.callee !== node)) {
-                return wrap(node);
+            // Prevent mantalon(<ident>.call)(<ident>)
+            if (parent && (parent.type === "CallExpression" && parent.callee === node)) {
+                return node;
             }
-            return node;
+
+            return wrap(node);
 
         default:
             // console.log("unsupported", node);
