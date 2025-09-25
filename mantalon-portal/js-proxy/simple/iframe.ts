@@ -4,6 +4,7 @@ import { fromFakeUrl, intoFakeUrl, makeProxiedLocation } from "../location";
 export function setupIframes(fakeOrigin: URL) {
     const originalSrcDescriptor = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, "src");
     const originalContentWindowDescriptor = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, "contentWindow");
+    const originalElementSetAttribute = Element.prototype.setAttribute;
 
     Object.defineProperty(HTMLIFrameElement.prototype, "src", {
         set(value) {
@@ -57,4 +58,11 @@ export function setupIframes(fakeOrigin: URL) {
             return contentWindow.document;
         }
     });
+
+    Element.prototype.setAttribute = function (name, value) {
+        if (this.tagName === "IFRAME" && name === "src") {
+            console.log(`Setting src to ${value}`);
+        }
+        return originalElementSetAttribute.call(this, name, value);
+    };
 }
