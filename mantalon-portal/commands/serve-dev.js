@@ -22,7 +22,7 @@ const server = http.createServer((request, response) => {
     }
     if (internal) {
         return handler(request, response, {
-            "public": "..",
+            "public": "../..",
         });
     }
 
@@ -30,13 +30,13 @@ const server = http.createServer((request, response) => {
     if (request.url.startsWith("/mantalon/config/")) {
         request.url = request.url.substring("/mantalon/config".length);
         return handler(request, response, {
-            "public": `./examples/${directory}`,  // Use the specified directory
+            "public": `../examples/${directory}`,  // Use the specified directory
         });
     }
 
     // Return index.html in all cases
     response.writeHead(200, { "Content-Type": "text/html" });
-    fs.createReadStream("./index.html").pipe(response);
+    fs.createReadStream("../index.html").pipe(response);
 });
 
 server.listen(3000, () => {

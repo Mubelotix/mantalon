@@ -1,7 +1,7 @@
+import { applyJsProxyOnJs } from "./js-rewriter";
 import { loadRessource } from "./manifest";
 import { cookieJar, manifest, orDefault } from "./sw";
 
-const recast = require("recast");
 const parse5 = require("parse5");
 
 const JAVASCRIPT_MIME_TYPES = new Set([
@@ -23,34 +23,6 @@ const JAVASCRIPT_MIME_TYPES = new Set([
     "text/x-ecmascript",
     "text/x-javascript",
 ]);
-
-export function applyJsProxyOnJs(input: string): string {
-    const ast = recast.parse(input);
-    recast.types.visit(ast, {
-        visitIdentifier(path) {
-            if (path.node.name === "window") {
-                path.replace(recast.types.builders.identifier("proxiedWindow"));
-                return false;
-            } else if (path.node.name === "document") {
-                path.replace(recast.types.builders.identifier("proxiedDocument"));
-                return false;
-            } else if (path.node.name === "location") {
-                path.replace(recast.types.builders.identifier("proxiedLocation"));
-                return false;
-            // } else if (path.node.name === "self") {
-            //     path.replace(recast.types.builders.identifier("proxiedSelf"));
-            //     return false;
-            // } else if (path.node.name === "globalThis") {
-            //     path.replace(recast.types.builders.identifier("proxiedGlobalThis"));
-            //     return false;
-            }
-
-            this.traverse(path);
-        },
-    });
-    
-    return recast.print(ast).code;
-}
 
 function applyJsProxyOnDoc(input) {
     // Parse the document with parse5
@@ -152,7 +124,7 @@ export async function applyJsProxy(
             return html;
         } else if (contentType.startsWith("text/javascript") || contentType.startsWith("application/javascript")) {
             // TODO: Add more  javascript content types
-            
+
             bodyText = await response.text();
             bodyText = applyJsProxyOnJs(bodyText);
 
