@@ -1,3 +1,4 @@
+// @ts-ignore: TS2580
 const recast = require("recast");
 
 function isBindingIdentifier(path) {

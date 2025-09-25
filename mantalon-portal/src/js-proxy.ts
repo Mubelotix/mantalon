@@ -2,6 +2,7 @@ import { applyJsProxyOnJs } from "./js-rewriter";
 import { loadRessource } from "./manifest";
 import { cookieJar, manifest, orDefault } from "./sw";
 
+// @ts-ignore: TS2580
 const parse5 = require("parse5");
 
 const JAVASCRIPT_MIME_TYPES = new Set([
