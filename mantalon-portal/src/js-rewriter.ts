@@ -116,8 +116,17 @@ function wrapExpressions(node: any, parent?: any): any {
             node.init = wrapExpressions(node.init, node);
             return node;
 
+        case "AssignmentExpression":
+            // TODO: Maybe this is leaking the top-level data
+            if (node.left.type == "MemberExpression") {
+                node.left.object = wrapExpressions(node.left.object, node.left);
+            }
+            node.right = wrapExpressions(node.right, node);
+            return node;
+
         case "ArrowFunctionExpression":
         case "FunctionDeclaration":
+        case "FunctionExpression":
             node.body = wrapExpressions(node.body, node);
             return node;
         

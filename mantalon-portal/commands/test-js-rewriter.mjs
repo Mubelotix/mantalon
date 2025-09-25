@@ -180,6 +180,19 @@ const testCases = [
         `,
         expected: `mantalon(mantalon(self).webpackChunk_N_E)`,
     },
+    {
+        name: "Inline function",
+        input: `
+        a = function(a, b) {
+            return a + b;
+        }
+        `,
+        expected: `
+        a = function(a, b) {
+            return mantalon(a) + mantalon(b);
+        }
+        `,
+    },
 ];
 
 function normalize(str) {
