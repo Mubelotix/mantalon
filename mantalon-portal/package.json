@@ -8,12 +8,14 @@
     "bundle-js-proxy": "node bundle-js-proxy.mjs",
     "watch": "chokidar './src' -d 5000 -c 'npm run bundle'",
     "dev": "concurrently \"chokidar './src' -c 'npm run bundle'\" \"chokidar './js-proxy' -c 'npm run bundle-js-proxy'\" \"node commands/serve-dev.js $npm_config_directory\"",
-    "apply-js-proxy": "node commands/bundle-js-rewriter.mjs && node commands/apply-js-rewriter.mjs"
+    "apply-js-rewriter": "node commands/bundle-js-rewriter.mjs && node commands/apply-js-rewriter.mjs",
+    "test-js-rewriter": "node commands/bundle-js-rewriter.mjs && node commands/test-js-rewriter.mjs"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "ast-types": "^0.16.1",
     "mantalon-client": "^0.1.4",
     "parse5": "^7.2.0",
     "recast": "^0.23.9",
