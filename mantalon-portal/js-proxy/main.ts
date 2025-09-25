@@ -16,6 +16,10 @@ const fakeOrigin = new URL(currentOrigin);
 
 export var mantalonWorker: ServiceWorker; // TODO: not available in workers
 
+declare global {
+    var mantalon: (v: any) => any;
+}
+
 function mantalon(v: any): any {
     return v;
 }

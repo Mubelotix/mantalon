@@ -1,7 +1,9 @@
 // @ts-ignore: TS2580
 const recast = require("recast");
+import * as types from "ast-types";
+import { NodePath } from "ast-types/lib/node-path";
 
-function isBindingIdentifier(path) {
+function isBindingIdentifier(path: NodePath<types.namedTypes.Identifier>) {
     let node = path.node;
     let parentPath = path.parentPath;
 
@@ -43,38 +45,48 @@ export function applyJsProxyOnJs(input: string): string {
     }
 
     recast.types.visit(ast, {
-        visitMemberExpression(path) {
-            // first, traverse children
+        visitMemberExpression(path: NodePath<types.namedTypes.MemberExpression>) {
             this.traverse(path);
 
-            // rebuild the full member expression with wrapping
             const node = path.node;
-
-            // wrap the object if not already wrapped
-            const obj = node.object.type === "CallExpression" && node.object.callee.name === "mantalon"
+            const obj = node.object.type === "CallExpression"
+                && node.object.callee.type === "Identifier"
+                && node.object.callee.name === "mantalon"
                 ? node.object
                 : wrap(node.object);
 
-            // wrap the full member expression (object.property)
             path.replace(wrap(b.memberExpression(obj, node.property, node.computed)));
-
             return false;
         },
 
-        visitCallExpression(path) {
+
+        visitCallExpression(path: NodePath<types.namedTypes.CallExpression>) {
             this.traverse(path);
 
             const node = path.node;
 
             // wrap callee if not already wrapped
-            if (node.callee.type !== "CallExpression" || node.callee.callee.name !== "mantalon") {
+            if (
+                node.callee.type !== "CallExpression" ||
+                !(
+                    node.callee.callee.type === "Identifier" &&
+                    node.callee.callee.name === "mantalon"
+                )
+            ) {
                 node.callee = wrap(node.callee);
             }
 
             return false;
         },
 
-        visitIdentifier(path) {
+        visitIdentifier(path: NodePath<types.namedTypes.Identifier>) {
+            const parent = path.parent.node;
+
+            // Skip identifiers that are keys in member expressions (non-computed)
+            if (parent.type === "MemberExpression" && parent.property === path.node && !parent.computed) {
+                return false;
+            }
+
             if (isBindingIdentifier(path)) return false;
 
             path.replace(wrap(path.node));
