@@ -24,7 +24,7 @@ const JAVASCRIPT_MIME_TYPES = new Set([
     "text/x-javascript",
 ]);
 
-function applyJsProxyOnJs(input: string): string {
+export function applyJsProxyOnJs(input: string): string {
     const ast = recast.parse(input);
     recast.types.visit(ast, {
         visitIdentifier(path) {
@@ -150,9 +150,11 @@ export async function applyJsProxy(
             }
             
             return html;
-        } else if (contentType.includes("text/javascript")) {
+        } else if (contentType.startsWith("text/javascript") || contentType.startsWith("application/javascript")) {
+            // TODO: Add more  javascript content types
+            
             bodyText = await response.text();
-            bodyText =  applyJsProxyOnJs(bodyText);
+            bodyText = applyJsProxyOnJs(bodyText);
 
             if (destination === "worker") {
                 let proxyInitializer = await loadProxyInitializer(url);
