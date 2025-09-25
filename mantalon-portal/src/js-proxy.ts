@@ -144,6 +144,8 @@ export async function applyJsProxy(
             return bodyText;
         }
     } catch(e) {
+        // FIXME: When this happens the response gets corrupted
+        // Uncaught (in promise) TypeError: Failed to construct 'Response': Response body object should not be disturbed or locked
         console.error(`Failed to apply JS proxy on ${url.href}: ${e}`);
         return undefined;
     }
