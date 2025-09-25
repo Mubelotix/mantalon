@@ -189,6 +189,23 @@ const testCases = [
         }
         `,
     },
+    {
+        name: "Try catch block",
+        input: `
+        try {
+            console.log("whatever");
+        } catch (e) {
+            console.error(e);
+        }
+        `,
+        expected: `
+        try {
+            mantalon(mantalon(console).log).call(mantalon(console), "whatever");
+        } catch (e) {
+            mantalon(mantalon(console).error).call(mantalon(console), mantalon(e));
+        }
+        `,
+    }
 ];
 
 function normalize(str) {

@@ -84,6 +84,7 @@ function wrapExpressions(node: any, parent?: any): any {
         case "ArrowFunctionExpression":
         case "FunctionDeclaration":
         case "FunctionExpression":
+        case "CatchClause":
             node.body = wrapExpressions(node.body, node);
             return node;
         
