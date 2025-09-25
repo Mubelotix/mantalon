@@ -1,25 +1,21 @@
-use std::{cell::RefCell, collections::HashMap, io::Error as IoError, rc::Rc, time::Duration};
+use std::{cell::RefCell, collections::HashMap, io::Error as IoError, rc::Rc, sync::LazyLock, time::Duration};
 use http::{Request, Response, Uri};
 use tokio::sync::RwLock;
 use tokio_rustls::rustls::pki_types::InvalidDnsNameError;
 use crate::*;
-use lazy_static::lazy_static;
 
-lazy_static!{
-    pub static ref POOL: Pool = Pool {
-        connections: Default::default(),
-    };
+pub static POOL: LazyLock<Pool> = LazyLock::new(||
+    Pool { connections: Default::default() }
+);
 
-    pub static ref MANTALON_ENDPOINT: EndpointUrl = EndpointUrl(Rc::new(RefCell::new(String::new())));
-}
+pub static MANTALON_ENDPOINT: LazyLock<EndpointUrl> = LazyLock::new(||
+    EndpointUrl(Rc::new(RefCell::new(String::new())))
+);
 
 #[allow(clippy::type_complexity)]
 pub struct Pool {
-    connections: Rc<RwLock<HashMap<String, Option<SendRequest>>>>,
+    connections: Arc<RwLock<HashMap<String, Option<SendRequest>>>>,
 }
-
-unsafe impl Send for Pool {}
-unsafe impl Sync for Pool {}
 
 pub struct EndpointUrl(Rc<RefCell<String>>);
 unsafe impl Send for EndpointUrl {}
@@ -116,7 +112,7 @@ impl Pool {
         std::mem::drop(mantalon_endpoint);
 
         // Open the websocket
-        let connections2 = Rc::clone(&self.connections);
+        let connections2 = Arc::clone(&self.connections);
         let multiaddr2 = multiaddr.clone();
         let on_close = || spawn_local(async move { connections2.write().await.remove(&multiaddr2); });
         let websocket = WebSocket::new(&ws_url).map_err(SendRequestError::Websocket)?;
@@ -159,7 +155,7 @@ impl Pool {
         if let Ok(mut connections) = self.connections.try_write() {
             connections.insert(multiaddr.clone(), Some(request_sender2));
         } else {
-            let connections = Rc::clone(&self.connections);
+            let connections = Arc::clone(&self.connections);
             spawn_local(async move {
                 connections.write().await.insert(multiaddr, Some(request_sender2));
             });
