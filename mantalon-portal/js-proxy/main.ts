@@ -1,13 +1,8 @@
 // TODO: Message passing
 // TODO: window.cookieStore
-
-import { makeProxiedDocument } from "./document";
-import { setupIframes } from "./simple/iframe";
-import { fromFakeUrl, intoFakeUrl, makeProxiedLocation } from "./location";
-import { makeProxiedWindow, setupWindowPostMessage } from "./window";
-import { setupWorkers } from "./simple/worker";
-import { makeProxiedDedicatedWorker, setupWorkerPostMessage } from "./worker";
-import { setupScripts } from "./simple/script";
+// TODO: location
+// TODO: iframes
+// TODO: scripts
 
 const currentOrigin = "init-origin"; // Value is added automatically when the script gets injected
 const targetOrigins = new Set(["init-targetOrigins"]); // Value is added automatically when the script gets injected
@@ -19,19 +14,13 @@ const currentProtocol = currentOrigin.split("/")[0];
 
 const fakeOrigin = new URL(currentOrigin);
 
-export function getAllPropertyNames(obj): Set<string> {
-    const props: Set<string> = new Set();
-    let current = obj;
-    
-    while (current && current !== Object.prototype) {
-        Object.getOwnPropertyNames(current).forEach(prop => props.add(prop));
-        current = Object.getPrototypeOf(current);
-    }
-    
-    return props;
+export var mantalonWorker: ServiceWorker; // TODO: not available in workers
+
+function mantalon(v: any): any {
+    return v;
 }
 
-export var mantalonWorker: ServiceWorker; // TODO: not available in workers
+globalThis.mantalon = mantalon;
 
 if (typeof window !== "undefined" && globalThis instanceof window.Window) {
     navigator.serviceWorker.ready.then((registration) => {
@@ -47,66 +36,8 @@ if (typeof window !== "undefined" && globalThis instanceof window.Window) {
             console.log("Received message from Mantalon", event.data);
         }
     });
-    
-    setupIframes(fakeOrigin);
-    setupScripts();
-    setupWindowPostMessage(window);
-    setupWorkers();
-    
-    const proxiedLocation = makeProxiedLocation(
-        location,
-        currentHost,
-        currentHostname,
-        currentOrigin,
-        currentProtocol,
-        currentPort,
-        targetOrigins
-    );
-    const proxiedDocument = makeProxiedDocument(
-        document,
-        cookies,
-        targetOrigins,
-        proxiedLocation
-    );
-    const proxiedWindow = makeProxiedWindow(
-        window,
-        targetOrigins,
-        proxiedDocument,
-        proxiedLocation
-    );
-    
-    globalThis.proxiedLocation = proxiedLocation;
-    globalThis.proxiedDocument = proxiedDocument;
-    globalThis.proxiedWindow = proxiedWindow;
-    globalThis.proxiedSelf = proxiedWindow;
-    globalThis.proxiedGlobalThis = proxiedWindow;
-    
-    globalThis = proxiedWindow;
-    self = proxiedWindow;
 } else if (globalThis instanceof DedicatedWorkerGlobalScope) {
-    setupWorkers();
-    setupWorkerPostMessage(self);
-    
-    const proxiedLocation = makeProxiedLocation(
-        location,
-        currentHost,
-        currentHostname,
-        currentOrigin,
-        currentProtocol,
-        currentPort,
-        targetOrigins
-    );
-    const proxiedDedicatedWorker = makeProxiedDedicatedWorker(
-        globalThis,
-        proxiedLocation
-    );
-    
-    globalThis.proxiedLocation = proxiedLocation;
-    globalThis.proxiedSelf = proxiedDedicatedWorker;
-    globalThis.proxiedGlobalThis = proxiedDedicatedWorker;
-
-    globalThis = proxiedDedicatedWorker;
-    self = proxiedDedicatedWorker;
+    console.error("Worker proxying not yet implemented");
 } else {
     console.error(`Unsupported environment: ${self}`);
 }
